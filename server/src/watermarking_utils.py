@@ -35,6 +35,8 @@ import io
 import json
 import os
 import re
+from .valdemar_method import ValdemarMethod
+
 
 from watermarking_method import (
     PdfSource,
@@ -50,6 +52,7 @@ from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
 
 METHODS: Dict[str, WatermarkingMethod] = {
     AddAfterEOF.name: AddAfterEOF(),
+    "Valdemar": ValdemarMethod(),
     UnsafeBashBridgeAppendEOF.name: UnsafeBashBridgeAppendEOF()
 }
 """Registry of available watermarking methods.
