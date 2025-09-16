@@ -764,8 +764,7 @@ def create_app():
         if not method or not isinstance(key, str):
             return jsonify({"error": "method, and key are required"}), 400
 
-        # lookup the document; FIXME enforce ownership
-        # lookup the document; FIXME enforce ownership
+        # lookup the document; FIXME enforce ownership, should be done now. 
         try:
             with get_engine().connect() as conn:
                 # original document row
@@ -775,7 +774,7 @@ def create_app():
                         FROM Documents
                         WHERE id = :id
                         LIMIT 1
-                    """),
+                    """), #LIMIT 1 to make sure nothing else gets returned
                     {"id": doc_id},
                 ).first()
 
@@ -790,6 +789,7 @@ def create_app():
                     """),
                     {"id": doc_id},
                 ).first()
+
         except Exception as e:
             return jsonify({"error": f"database error: {str(e)}"}), 503
 
