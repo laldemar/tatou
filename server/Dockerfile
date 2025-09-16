@@ -26,4 +26,3 @@ EXPOSE 5000
 
 # Default command runs the web server
 CMD ["./entrypoint.sh"]
-

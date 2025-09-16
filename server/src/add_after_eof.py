@@ -179,4 +179,3 @@ class AddAfterEOF(WatermarkingMethod):
 
 
 __all__ = ["AddAfterEOF"]
-
