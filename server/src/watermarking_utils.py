@@ -44,6 +44,8 @@ from watermarking_method import (
 from add_after_eof import AddAfterEOF
 from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF 
 from valdemar_method import ValdemarMethod
+from Theo_method import TheoMethod
+from Mathewos_method import MathewosMethod
 
 # --------------------
 # Method registry
@@ -52,6 +54,8 @@ from valdemar_method import ValdemarMethod
 METHODS: Dict[str, WatermarkingMethod] = {
     AddAfterEOF.name: AddAfterEOF(),
     ValdemarMethod.name: ValdemarMethod(),
+    TheoMethod.name: TheoMethod(),
+    MathewosMethod.name: MathewosMethod(),
     UnsafeBashBridgeAppendEOF.name: UnsafeBashBridgeAppendEOF()
 }
 """Registry of available watermarking methods.
