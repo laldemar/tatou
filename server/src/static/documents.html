@@ -190,22 +190,25 @@
           window.open(url, '_blank');
           setTimeout(()=> URL.revokeObjectURL(url), 60_000);
         }
-        if (action === 'versions') {
-          const r = await apiFetch('/api/list-versions/' + id);
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          const data = await r.json();
-          const list = (data.versions||[]).map(v => `
-            <li class="list-row">
-              <div>
-                <div><strong>Link:</strong> <a href="api/get-version/${escapeHtml(v.link)}">${escapeHtml(v.link)}</a></div>
-                <div class="muted small">Method: ${escapeHtml(v.method || '')} • Intended for: ${escapeHtml(v.intended_for || '')}</div>
-              </div>
-              <div class="row-actions">
-                <button class="btn" data-open-version="${v.link}">Open</button>
-              </div>
-            </li>`).join('');
-          openModal('Watermarked versions for #' + id, `<ul class="list">${list || '<li class=muted>No versions yet.</li>'}</ul>`);
-        }
+          if (action === 'versions') {
+  const r = await apiFetch('/api/list-versions/' + id);
+  const data = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+
+  const list = (data.versions||[]).map(v => `
+    <li class="list-row">
+      <div>
+        <div><strong>Link:</strong> <a href="api/get-version/${escapeHtml(v.link)}">${escapeHtml(v.link)}</a></div>
+        <div class="muted small">Method: ${escapeHtml(v.method || '')} • Intended for: ${escapeHtml(v.intended_for || '')}</div>
+      </div>
+      <div class="row-actions">
+        <button class="btn" data-open-version="${v.link}">Open</button>
+        <button class="btn" data-read-version="${v.link}" data-method="${escapeHtml(v.method || '')}">Read</button>
+      </div>
+    </li>`).join('');
+
+  openModal('Watermarked versions for #' + id, `<ul class="list">${list || '<li class=muted>No versions yet.</li>'}</ul>`);
+}
         if (action === 'watermark') {
           openCreateWatermarkForm(id);
         }
@@ -341,7 +344,72 @@
       } catch (err) {
         alert('Open failed: ' + err.message);
       }
-    });
+      const openBtn = e.target.closest('button[data-open-version]');
+  if (openBtn) {
+    const link = openBtn.getAttribute('data-open-version');
+    try {
+      const r = await apiFetch('/api/get-version/' + encodeURIComponent(link));
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(()=> URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      alert('Open failed: ' + err.message);
+    }
+    return;
+  }
+  // NEW: read watermark from version
+  const readBtn = e.target.closest('button[data-read-version]');
+  if (readBtn) {
+    const link = readBtn.getAttribute('data-read-version');
+    const prefillMethod = readBtn.getAttribute('data-method') || '';
+    try {
+      const methods = await loadMethods();
+      const options = methods.map(m =>
+        `<option value="${escapeHtml(m.name)}" ${m.name===prefillMethod?'selected':''}>
+           ${escapeHtml(m.name)} — ${escapeHtml(m.description||'')}
+         </option>`).join('');
+
+      openModal('Read watermark (version)', `
+        <form id="readVersionForm" class="form-vertical">
+          <input type="hidden" name="link" value="${escapeHtml(link)}">
+          <label>Method
+            <select name="method" required>
+              <option value="" disabled ${prefillMethod?'':'selected'}>Select a method</option>
+              ${options}
+            </select>
+          </label>
+          <label>Position<input name="position" placeholder="Position"></label>
+          <label>Key<input name="key" placeholder="Reader key" required></label>
+          <div class="row-actions">
+            <button class="btn" type="button" id="cancelReadVersion">Cancel</button>
+            <button class="btn btn--primary" type="submit">Read</button>
+          </div>
+        </form>
+      `);
+
+      document.getElementById('cancelReadVersion').onclick = () => { modal.hidden = true; };
+      document.getElementById('readVersionForm').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const fd = new FormData(ev.currentTarget);
+        const payload = Object.fromEntries(fd.entries());
+        if (!payload.position || payload.position.trim() === "") payload.position = null;
+
+        try {
+          const rr = await apiFetchJSON(`/api/read-watermark-version`, 'POST', payload);
+          const data = await rr.json().catch(()=>({}));
+          if (!rr.ok) throw new Error(data.error || rr.statusText || `HTTP ${rr.status}`);
+          openModal('Watermark data', `<pre class="pre">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`);
+        } catch (err) {
+          alert('Read failed: ' + err.message);
+        }
+      });
+    } catch (err) {
+      alert('Read failed: ' + err.message);
+    }
+  }
+});
 
     document.getElementById('refreshBtn').onclick = loadDocuments;
     document.getElementById('logoutBtn').onclick = () => { localStorage.removeItem('authToken'); window.location.href = 'login.html'; };

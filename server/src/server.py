@@ -22,7 +22,10 @@ except Exception:  # dill is optional
 
 import watermarking_utils as WMUtils
 from watermarking_method import WatermarkingMethod
-#from watermarking_utils import METHODS, apply_watermark, read_watermark, explore_pdf, is_watermarking_applicable, get_method
+
+from watermarking_utils import METHODS, apply_watermark, read_watermark, explore_pdf, is_watermarking_applicable, get_method
+from watermarking_utils import read_watermark  # already imported earlier as WMUtils? fine to keep both
+from watermarking_method import SecretNotFoundError, InvalidKeyError, WatermarkingError
 
 def create_app():
     app = Flask(__name__)
@@ -60,7 +63,7 @@ def create_app():
 
     def _auth_error(msg: str, code: int = 401):
         return jsonify({"error": msg}), code
-
+    
     def require_auth(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
@@ -85,8 +88,61 @@ def create_app():
                 h.update(chunk)
         return h.hexdigest()
 
-    # --- Routes ---
-    
+    # --- Routes ---    
+
+    # ---- read watermark FROM A VERSION (by link) ----
+@app.post("/api/read-watermark-version")
+def api_read_watermark_version():
+    body = request.get_json(silent=True) or {}
+    method  = body.get("method")
+    key     = body.get("key", "")
+    link    = body.get("link")          # the opaque token we display in the UI
+    position = body.get("position")     # optional; ignored by toy-eof
+
+    if not method or not key or not link:
+        return jsonify(error="fields 'method', 'key' and 'link' are required"), 400
+
+    # Look up the version by link, get its on-disk path
+    try:
+        with get_engine().connect() as conn:
+            row = conn.execute(
+                text("SELECT path FROM Versions WHERE link = :link LIMIT 1"),
+                {"link": link},
+            ).first()
+    except Exception as e:
+        return jsonify(error=f"database error: {e}"), 503
+
+    if not row:
+        return jsonify(error="version not found"), 404
+
+    pdf_path = Path(row.path)
+    try:
+        # Safety: ensure it lives under STORAGE_DIR and exists
+        pdf_path.resolve().relative_to(app.config["STORAGE_DIR"].resolve())
+    except Exception:
+        return jsonify(error="version path invalid"), 500
+    if not pdf_path.exists():
+        return jsonify(error="file missing on disk"), 410
+
+    try:
+        secret = read_watermark(method=method, pdf=pdf_path.read_bytes(), key=key)
+        return jsonify({
+            "link": link,
+            "method": method,
+            "position": position,
+            "secret": secret
+        }), 200
+    except InvalidKeyError as e:
+        return jsonify(error=str(e)), 401
+    except SecretNotFoundError as e:
+        return jsonify(error=str(e)), 400
+    except WatermarkingError as e:
+        return jsonify(error=f"Error when attempting to read watermark: {e}"), 400
+
+
+# end of the line
+
+
     @app.route("/<path:filename>")
     def static_files(filename):
         return app.send_static_file(filename)
@@ -104,7 +160,7 @@ def create_app():
         except Exception:
             db_ok = False
         return jsonify({"message": "The server is up and running.", "db_connected": db_ok}), 200
-
+    
     # POST /api/create-user {email, login, password}
     @app.post("/api/create-user")
     def create_user():
@@ -811,6 +867,8 @@ def create_app():
         }), 201
 
     return app
+
+
     
 
 # WSGI entrypoint
