@@ -719,24 +719,14 @@ def create_app():
             "class_qualname": f"{getattr(cls, '__module__', '?')}.{getattr(cls, '__qualname__', cls.__name__)}",
             "methods_count": len(WMUtils.METHODS)
         }), 201
-        
+    
     # GET /api/get-watermarking-methods -> {"methods":[{"name":..., "description":...}, ...], "count":N}
     @app.get("/api/get-watermarking-methods")
     def get_watermarking_methods():
         methods = []
-
         for m in WMUtils.METHODS:
             methods.append({"name": m, "description": WMUtils.get_method(m).get_usage()})
         return jsonify({"methods": methods, "count": len(methods)}), 200
-        
-
-        # GET /api/get-watermarking-methods
-    @app.get("/api/get-watermarking-methods")
-    def get_watermarking_methods():
-        methods = []
-        for m in WMUtils.METHODS:
-            methods.append({"name": m, "description": WMUtils.get_method(m).get_usage()})
-        return jsonify({"methods": methods, "count": len(methods)}), 200  
     # POST /api/read-watermark
     @app.post("/api/read-watermark")
     @app.post("/api/read-watermark/<int:document_id>")
@@ -814,13 +804,7 @@ def create_app():
             "method": method,
             "position": position
         }), 201
-    
-    
-
     return app
-
-
-    
 
 # WSGI entrypoint
 app = create_app()
