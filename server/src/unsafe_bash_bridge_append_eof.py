@@ -75,4 +75,3 @@ class UnsafeBashBridgeAppendEOF(WatermarkingMethod):
 
 
 __all__ = ["UnsafeBashBridgeAppendEOF"]
-

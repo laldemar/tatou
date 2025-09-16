@@ -269,4 +269,3 @@ __all__ = [
     "is_pdf_bytes",
     "WatermarkingMethod",
 ]
-
