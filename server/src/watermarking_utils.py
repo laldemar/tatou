@@ -42,7 +42,8 @@ from watermarking_method import (
     load_pdf_bytes,
 )
 from add_after_eof import AddAfterEOF
-from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
+from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF 
+from valdemar_method import ValdemarMethod
 
 # --------------------
 # Method registry
@@ -50,6 +51,7 @@ from unsafe_bash_bridge_append_eof import UnsafeBashBridgeAppendEOF
 
 METHODS: Dict[str, WatermarkingMethod] = {
     AddAfterEOF.name: AddAfterEOF(),
+    ValdemarMethod.name: ValdemarMethod(),
     UnsafeBashBridgeAppendEOF.name: UnsafeBashBridgeAppendEOF()
 }
 """Registry of available watermarking methods.
