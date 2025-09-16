@@ -60,7 +60,7 @@ def create_app():
 
     def _auth_error(msg: str, code: int = 401):
         return jsonify({"error": msg}), code
-    
+
     def require_auth(f):
         @wraps(f)
         def wrapper(*args, **kwargs):
@@ -85,7 +85,8 @@ def create_app():
                 h.update(chunk)
         return h.hexdigest()
 
-    # --- Routes ---    
+    # --- Routes ---
+    
     @app.route("/<path:filename>")
     def static_files(filename):
         return app.send_static_file(filename)
@@ -103,7 +104,7 @@ def create_app():
         except Exception:
             db_ok = False
         return jsonify({"message": "The server is up and running.", "db_connected": db_ok}), 200
-    
+
     # POST /api/create-user {email, login, password}
     @app.post("/api/create-user")
     def create_user():
@@ -719,96 +720,70 @@ def create_app():
             "class_qualname": f"{getattr(cls, '__module__', '?')}.{getattr(cls, '__qualname__', cls.__name__)}",
             "methods_count": len(WMUtils.METHODS)
         }), 201
+        
+    
     
     # GET /api/get-watermarking-methods -> {"methods":[{"name":..., "description":...}, ...], "count":N}
     @app.get("/api/get-watermarking-methods")
     def get_watermarking_methods():
         methods = []
+
         for m in WMUtils.METHODS:
             methods.append({"name": m, "description": WMUtils.get_method(m).get_usage()})
+            
         return jsonify({"methods": methods, "count": len(methods)}), 200
-    # POST /api/read-watermark
-
+        
     # POST /api/read-watermark
     @app.post("/api/read-watermark")
     @app.post("/api/read-watermark/<int:document_id>")
     @require_auth
     def read_watermark(document_id: int | None = None):
-        """
-        Read a watermark from either:
-          A) a source document (by document_id), or
-          B) a watermarked *version* (by public 'link' token in the JSON body).
-
-        JSON body must include: method, key
-        Optional: position, link
-        """
-        # Accept id from path, query (?id=/ ?documentid=), or JSON body
+        # accept id from path, query (?id= / ?documentid=), or JSON body on POST
         if not document_id:
             document_id = (
                 request.args.get("id")
                 or request.args.get("documentid")
                 or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
             )
-
+        try:
+            doc_id = document_id
+        except (TypeError, ValueError):
+            return jsonify({"error": "document id required"}), 400
+            
         payload = request.get_json(silent=True) or {}
-        method   = payload.get("method")
+        # allow a couple of aliases for convenience
+        method = payload.get("method")
         position = payload.get("position") or None
-        key      = payload.get("key")
-        link     = payload.get("link")  # <-- if provided, we read from Versions by link
+        key = payload.get("key")
 
-        # basic validation
+        # validate input
+        try:
+            doc_id = int(doc_id)
+        except (TypeError, ValueError):
+            return jsonify({"error": "document_id (int) is required"}), 400
         if not method or not isinstance(key, str):
-            return jsonify({"error": "method and key are required"}), 400
+            return jsonify({"error": "method, and key are required"}), 400
 
+        # lookup the document; FIXME enforce ownership
+        try:
+            with get_engine().connect() as conn:
+                row = conn.execute(
+                    text("""
+                        SELECT id, name, path
+                        FROM Documents
+                        WHERE id = :id
+                    """),
+                    {"id": doc_id},
+                ).first()
+        except Exception as e:
+            return jsonify({"error": f"database error: {str(e)}"}), 503
+
+        if not row:
+            return jsonify({"error": "document not found"}), 404
+
+        # resolve path safely under STORAGE_DIR
         storage_root = Path(app.config["STORAGE_DIR"]).resolve()
-
-        # ----------------------------
-        # OPTION B: read by version link
-        # ----------------------------
-        file_path: Path
-        if link:
-            try:
-                with get_engine().connect() as conn:
-                    row = conn.execute(
-                        text("SELECT path FROM Versions WHERE link = :link LIMIT 1"),
-                        {"link": link},
-                    ).first()
-            except Exception as e:
-                return jsonify({"error": f"database error: {str(e)}"}), 503
-
-            if not row:
-                return jsonify({"error": "version not found"}), 404
-
-            file_path = Path(row.path)
-
-        else:
-            # ----------------------------
-            # OPTION A: read by document id (old behavior)
-            # ----------------------------
-            try:
-                doc_id = int(document_id)
-            except (TypeError, ValueError):
-                return jsonify({"error": "document_id (int) is required if no 'link' is provided"}), 400
-
-            try:
-                with get_engine().connect() as conn:
-                    row = conn.execute(
-                        text("""
-                            SELECT id, name, path
-                            FROM Documents
-                            WHERE id = :id
-                        """),
-                        {"id": doc_id},
-                    ).first()
-            except Exception as e:
-                return jsonify({"error": f"database error: {str(e)}"}), 503
-
-            if not row:
-                return jsonify({"error": "document not found"}), 404
-
-            file_path = Path(row.path)
-
-        # -------- path safety / existence checks --------
+        file_path = Path(row.path)
         if not file_path.is_absolute():
             file_path = storage_root / file_path
         file_path = file_path.resolve()
@@ -818,8 +793,8 @@ def create_app():
             return jsonify({"error": "document path invalid"}), 500
         if not file_path.exists():
             return jsonify({"error": "file missing on disk"}), 410
-
-        # -------- do the read --------
+        
+        secret = None
         try:
             secret = WMUtils.read_watermark(
                 method=method,
@@ -828,21 +803,15 @@ def create_app():
             )
         except Exception as e:
             return jsonify({"error": f"Error when attempting to read watermark: {e}"}), 400
-
-        # If read by link, we don't have a doc_id handy — return link instead.
-        resp = {
-            "secret":  secret,
-            "method":  method,
-            "position": position,
-        }
-        if link:
-            resp["link"] = link
-        else:
-            resp["documentid"] = int(document_id)
-
-        return jsonify(resp), 200
+        return jsonify({
+            "documentid": doc_id,
+            "secret": secret,
+            "method": method,
+            "position": position
+        }), 201
 
     return app
+    
 
 # WSGI entrypoint
 app = create_app()

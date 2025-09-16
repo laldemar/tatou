@@ -148,20 +148,18 @@
       }
     }
 
-    // --- Upload: cache the form before any await to avoid e.currentTarget=null ---
     document.getElementById('uploadForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const form = e.currentTarget;               // cache it!
       statusEl.textContent = 'Uploading…';
-      const fd = new FormData(form);
+      const fd = new FormData(e.currentTarget);
       try {
         const resp = await apiFetch('/api/upload-document', { method: 'POST', body: fd });
         if (!resp.ok) {
           const err = await resp.json().catch(()=>({}));
-          throw new Error(err.message || resp.statusText || `HTTP ${resp.status}`);
+          throw new Error(err.message || resp.statusText);
         }
         statusEl.textContent = 'Uploaded successfully';
-        form.reset();                              // safe now
+        e.currentTarget.reset();
         await loadDocuments();
       } catch (err) {
         statusEl.textContent = 'Upload failed: ' + err.message;
@@ -190,25 +188,6 @@
           window.open(url, '_blank');
           setTimeout(()=> URL.revokeObjectURL(url), 60_000);
         }
-          if (action === 'versions') {
-  const r = await apiFetch('/api/list-versions/' + id);
-  const data = await r.json().catch(()=>({}));
-  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-
-  const list = (data.versions||[]).map(v => `
-    <li class="list-row">
-      <div>
-        <div><strong>Link:</strong> <a href="api/get-version/${escapeHtml(v.link)}">${escapeHtml(v.link)}</a></div>
-        <div class="muted small">Method: ${escapeHtml(v.method || '')} • Intended for: ${escapeHtml(v.intended_for || '')}</div>
-      </div>
-      <div class="row-actions">
-        <button class="btn" data-open-version="${v.link}">Open</button>
-        <button class="btn" data-read-version="${v.link}" data-method="${escapeHtml(v.method || '')}">Read</button>
-      </div>
-    </li>`).join('');
-
-  openModal('Watermarked versions for #' + id, `<ul class="list">${list || '<li class=muted>No versions yet.</li>'}</ul>`);
-}
         if (action === 'versions') {
           const r = await apiFetch('/api/list-versions/' + id);
           if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -270,35 +249,13 @@
       });
     }
 
-    // ---- NEW: Read from a specific watermarked VERSION when available ----
     async function openReadWatermarkForm(documentId){
-      // load methods + versions in parallel
-      const [methods, versionsResp] = await Promise.all([
-        loadMethods(),
-        apiFetch(`/api/list-versions/${documentId}`)
-      ]);
-      const versionsData = await versionsResp.json().catch(()=>({versions:[]}));
-      const versions = versionsData.versions || [];
-
-      const methodOptions  = methods
-        .map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} — ${escapeHtml(m.description||'')}</option>`)
-        .join('');
-      const versionOptions = versions
-        .map(v => `<option value="${escapeHtml(v.link)}">${escapeHtml(v.link)} — ${escapeHtml(v.method||'')} (${escapeHtml(v.intended_for||'')})</option>`)
-        .join('');
-
-      // If we have versions, show a Version dropdown; otherwise keep the old fields
+      const methods = await loadMethods();
+      const options = methods.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)} — ${escapeHtml(m.description||'')}</option>`).join('');
       openModal('Read watermark for #' + documentId, `
         <form id="readWmForm" class="form-vertical">
-          ${versions.length ? `
-            <label>Version<select name="link" required>
-              <option value="" disabled selected>Select a version</option>${versionOptions}
-            </select></label>` : `
-            <div class="muted small">No versions yet for this document. This will try to read from the original file.</div>`}
-          <label>Method<select name="method" required>
-            <option value="" disabled selected>Select a method</option>${methodOptions}
-          </select></label>
-          <label>Position<input name="position" placeholder="Position (optional)"></label>
+          <label>Method<select name="method" required><option value="" disabled selected>Select a method</option>${options}</select></label>
+          <label>Position<input name="position" placeholder="Position"></label>
           <label>Key<input name="key" placeholder="Reader key" required></label>
           <div class="row-actions">
             <button class="btn" type="button" id="cancelRead">Cancel</button>
@@ -307,38 +264,14 @@
         </form>
       `);
       document.getElementById('cancelRead').onclick = () => { modal.hidden = true; };
-
       document.getElementById('readWmForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
         const payload = Object.fromEntries(fd.entries());
-        if (!payload.position || payload.position.trim() === "") payload.position = null;
-
         try {
-          let r, data;
-
-          if (payload.link) {
-            // Prefer reading from a specific VERSION (requires /api/read-watermark-version)
-            r = await apiFetchJSON(`/api/read-watermark-version`, 'POST', payload);
-            data = await r.json().catch(()=>({}));
-            if (!r.ok) {
-              // If backend doesn't have that endpoint, fall back to original behavior:
-              const fallback = await apiFetchJSON(`/api/read-watermark/${documentId}`, 'POST', {
-                method: payload.method, key: payload.key, position: payload.position
-              });
-              const fbData = await fallback.json().catch(()=>({}));
-              if (!fallback.ok) throw new Error(data.error || fbData.error || r.statusText || `HTTP ${r.status}`);
-              data = fbData;
-            }
-          } else {
-            // No versions -> read from original (old route)
-            r = await apiFetchJSON(`/api/read-watermark/${documentId}`, 'POST', {
-              method: payload.method, key: payload.key, position: payload.position
-            });
-            data = await r.json().catch(()=>({}));
-            if (!r.ok) throw new Error(data.error || r.statusText || `HTTP ${r.status}`);
-          }
-
+          const r = await apiFetchJSON(`/api/read-watermark/${documentId}`, 'POST', payload);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const data = await r.json();
           openModal('Watermark data', `<pre class="pre">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`);
         } catch(err){
           alert('Read failed: ' + err.message);
@@ -369,3 +302,4 @@
   </script>
 </body>
 </html>
+
