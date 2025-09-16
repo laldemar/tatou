@@ -765,25 +765,42 @@ def create_app():
             return jsonify({"error": "method, and key are required"}), 400
 
         # lookup the document; FIXME enforce ownership
+        # lookup the document; FIXME enforce ownership
         try:
             with get_engine().connect() as conn:
-                row = conn.execute(
+                # original document row
+                row_doc = conn.execute(
                     text("""
                         SELECT id, name, path
                         FROM Documents
                         WHERE id = :id
+                        LIMIT 1
+                    """),
+                    {"id": doc_id},
+                ).first()
+
+                # NEW: latest watermarked version for this document (if any)
+                row_ver = conn.execute(
+                    text("""
+                        SELECT path
+                        FROM Versions
+                        WHERE documentid = :id
+                        ORDER BY id DESC
+                        LIMIT 1
                     """),
                     {"id": doc_id},
                 ).first()
         except Exception as e:
             return jsonify({"error": f"database error: {str(e)}"}), 503
 
-        if not row:
+        if not row_doc:
             return jsonify({"error": "document not found"}), 404
+
+        # Prefer version file if present, else original document file
+        file_path = Path(row_ver.path) if row_ver else Path(row_doc.path)
 
         # resolve path safely under STORAGE_DIR
         storage_root = Path(app.config["STORAGE_DIR"]).resolve()
-        file_path = Path(row.path)
         if not file_path.is_absolute():
             file_path = storage_root / file_path
         file_path = file_path.resolve()
@@ -793,6 +810,7 @@ def create_app():
             return jsonify({"error": "document path invalid"}), 500
         if not file_path.exists():
             return jsonify({"error": "file missing on disk"}), 410
+####
         
         secret = None
         try:
