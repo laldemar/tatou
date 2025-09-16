@@ -764,7 +764,7 @@ def create_app():
         if not method or not isinstance(key, str):
             return jsonify({"error": "method, and key are required"}), 400
 
-        # lookup the document; FIXME enforce ownership, should be done now. 
+        # lookup the document; FIXME enforce ownership, should be done now.
         try:
             with get_engine().connect() as conn:
                 # original document row
