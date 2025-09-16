@@ -5,7 +5,6 @@ import datetime as dt
 from pathlib import Path
 from functools import wraps
 
-
 from flask import Flask, jsonify, request, g, send_file
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -13,14 +12,6 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
-
-# --- Add near your other imports ---
-from pathlib import Path
-import os
-import pymysql  # already in your deps
-from flask import request, jsonify, g
-from watermarking_utils import read_watermark
-from watermarking_method import SecretNotFoundError, InvalidKeyError, WatermarkingError
 
 import pickle as _std_pickle
 try:
@@ -829,78 +820,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
 
-# If you already have a helper like get_db()/db_connect(), use it instead of this:
-def _db():
-    # Reuse a single connection per request if you already do this in your app.
-    if getattr(g, "_db", None) is None:
-        g._db = pymysql.connect(
-            host=os.getenv("MARIADB_HOST", "db"),
-            user=os.getenv("MARIADB_USER", "tatou"),
-            password=os.getenv("MARIADB_PASSWORD", "tatou"),
-            database=os.getenv("MARIADB_DATABASE", "tatou"),
-            cursorclass=pymysql.cursors.DictCursor,
-            autocommit=True,
-        )
-    return g._db
-
-@app.teardown_appcontext
-def _close_db(exc):
-    con = getattr(g, "_db", None)
-    if con is not None:
-        con.close()
-
-@app.post("/api/read-watermark-version")
-def api_read_watermark_version():
-    """
-    Request JSON:
-      { "link": "<string>", "method": "<string>", "key": "<string>", "position": "<string|null>" }
-    Response JSON on success:
-      { "link": ..., "method": ..., "position": ..., "secret": "<string>" }
-    """
-    body = request.get_json(silent=True) or {}
-    link     = (body.get("link") or "").strip()
-    method   = (body.get("method") or "").strip()
-    key      = body.get("key") or ""
-    position = body.get("position")  # optional (many methods ignore it)
-
-    if not link or not method or not key:
-        return jsonify(error="fields 'link', 'method' and 'key' are required"), 400
-
-    # --- Look up file path from DB ---
-    # If you track the logged-in user id, you can also enforce ownership:
-    #   JOIN Documents d ON d.id = v.documentid
-    #   WHERE v.link=%s AND d.ownerid=%s
-    sql = """
-      SELECT v.path, v.method AS stored_method, v.position AS stored_position
-      FROM Versions v
-      WHERE v.link = %s
-      LIMIT 1
-    """
-    with _db().cursor() as cur:
-        cur.execute(sql, (link,))
-        row = cur.fetchone()
-
-    if not row:
-        return jsonify(error="version not found"), 404
-
-    pdf_path = Path(row["path"])
-    if not pdf_path.exists():
-        return jsonify(error=f"version file missing on disk: {pdf_path}"), 404
-
-    try:
-        pdf_bytes = pdf_path.read_bytes()
-        # We use the client-chosen method, but you could default to row["stored_method"]
-        secret = read_watermark(method=method, pdf=pdf_bytes, key=key)
-        return jsonify({
-            "link": link,
-            "method": method,
-            "position": position,
-            "secret": secret
-        }), 200
-
-    except InvalidKeyError as e:
-        return jsonify(error=str(e)), 401
-    except SecretNotFoundError as e:
-        return jsonify(error=str(e)), 400
-    except WatermarkingError as e:
-        return jsonify(error=f"Error when attempting to read watermark: {e}"), 400
