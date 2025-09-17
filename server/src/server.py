@@ -836,11 +836,18 @@ def create_app():
     # Paths can be overridden with env vars:
     #   RMAP_KEYS_DIR (default: server/keys)
     #   RMAP_SERVER_PRIV_PASSPHRASE (optional)
-    rmap_keys_dir = Path(os.environ.get("RMAP_KEYS_DIR", "server/keys")).resolve()
-    clients_dir = rmap_keys_dir / "clients"
-    server_pub = rmap_keys_dir / "server_public.asc"
-    server_priv = rmap_keys_dir / "server_private.asc"
-    server_priv_pass = os.environ.get("RMAP_SERVER_PRIV_PASSPHRASE")  # may be None
+
+    
+# Anchor to the repository's /server directory, not CWD
+    SERVER_DIR = Path(__file__).resolve().parents[1]          # /app/server
+    DEFAULT_KEYS_DIR = SERVER_DIR / "keys"                    # /app/server/keys
+
+    rmap_keys_dir = Path(os.environ.get("RMAP_KEYS_DIR", str(DEFAULT_KEYS_DIR))).resolve()
+    clients_dir   = rmap_keys_dir / "clients"
+    server_pub    = rmap_keys_dir / "server_public.asc"
+    server_priv   = rmap_keys_dir / "server_private.asc"
+    server_priv_pass = os.environ.get("RMAP_SERVER_PRIV_PASSPHRASE")  # optional
+
 
     # Sanity check (fail fast with a readable error in logs):
     for p in [clients_dir, server_pub, server_priv]:
