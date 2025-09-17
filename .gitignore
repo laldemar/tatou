@@ -208,3 +208,7 @@ __marimo__/
 
 # Private key
 server_private.asc
+server/keys/server_private.asc
+*.asc~
+*private.asc
+*secret*.asc
