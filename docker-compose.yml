@@ -20,7 +20,7 @@ services:
       - DB_PASSWORD=${MARIADB_PASSWORD}
       - FLAG_2=${FLAG_2}
       - RMAP_KEYS_DIR=/app/server/keys
-      # - RMAP_SERVER_PRIV_PASSPHRASE=yourpass  # only if your server key is encrypted
+      - RMAP_SERVER_PRIV_PASSPHRASE=${RMAP_SERVER_PRIV_PASSPHRASE}
     depends_on:
       db:
         condition: service_healthy
