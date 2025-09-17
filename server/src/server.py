@@ -25,7 +25,7 @@ from watermarking_method import WatermarkingMethod
 #from watermarking_utils import METHODS, apply_watermark, read_watermark, explore_pdf, is_watermarking_applicable, get_method
 
 from rmap.identity_manager import IdentityManager #added for RMAP
-from rmap.rmap import RMAP #added for RMAP
+from rmap.rmap import RMAP #added for RMAP rmap is fun
 
 
 def create_app():
