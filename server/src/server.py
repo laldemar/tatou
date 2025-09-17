@@ -838,65 +838,66 @@ def create_app():
     #   RMAP_SERVER_PRIV_PASSPHRASE (optional)
 
     
-# Anchor to the repository's /server directory, not CWD
-    SERVER_DIR = Path(__file__).resolve().parents[1]          # /app/server
-    DEFAULT_KEYS_DIR = SERVER_DIR / "keys"                    # /app/server/keys
-
+ # --- RMAP setup (paths relative to /server) ---
+    SERVER_DIR = Path(__file__).resolve().parents[1]   # /app/server
+    DEFAULT_KEYS_DIR = SERVER_DIR / "keys"             # /app/server/keys
     rmap_keys_dir = Path(os.environ.get("RMAP_KEYS_DIR", str(DEFAULT_KEYS_DIR))).resolve()
-    clients_dir   = rmap_keys_dir / "clients"
-    server_pub    = rmap_keys_dir / "server_public.asc"
-    server_priv   = rmap_keys_dir / "server_private.asc"
+
+    clients_dir = rmap_keys_dir / "clients"            # /server/keys/clients/*.asc (public)
+    server_pub  = rmap_keys_dir / "server_public.asc"  # server public key
+    server_priv = rmap_keys_dir / "server_private.asc" # server private key
     server_priv_pass = os.environ.get("RMAP_SERVER_PRIV_PASSPHRASE")  # optional
 
-
-    # Sanity check (fail fast with a readable error in logs):
-    for p in [clients_dir, server_pub, server_priv]:
-        if not p.exists():
-            app.logger.error("RMAP key path missing: %s", p)
-
-    try:
-        im = IdentityManager(
-            client_keys_dir=clients_dir,
-            server_public_key_path=server_pub,
-            server_private_key_path=server_priv,
-            server_private_key_passphrase=server_priv_pass,
-        )
-        app.config["RMAP"] = RMAP(im)
-        app.logger.info("RMAP initialized; clients in %s", clients_dir)
-    except Exception as e:
-        app.logger.exception("Failed to initialize RMAP: %s", e)
+    # Fail fast but keep server up to return 503 from the endpoints
+    missing = [p for p in (clients_dir, server_pub, server_priv) if not p.exists()]
+    if missing:
+        app.logger.error("RMAP key path(s) missing: %s", ", ".join(map(str, missing)))
         app.config["RMAP"] = None
-    
-        # -------- RMAP endpoints --------
-    @app.post("/api/rmap/message1")
-    def rmap_message1():
-        if app.config.get("RMAP") is None:
-            return jsonify({"error": "RMAP not initialized"}), 503
-        body = request.get_json(silent=True) or {}
-        if "payload" not in body:
-            return jsonify({"error": "payload is required"}), 400
+    else:
         try:
-            out = app.config["RMAP"].handle_message1(body)
-            # out is either {"payload": "..."} or {"error": "..."}
-            status = 200 if "payload" in out else 400
-            return jsonify(out), status
+            im = IdentityManager(
+                client_keys_dir=clients_dir,
+                server_public_key_path=server_pub,
+                server_private_key_path=server_priv,
+                server_private_key_passphrase=server_priv_pass,
+            )
+            app.config["RMAP"] = RMAP(im)
+            app.logger.info("RMAP initialized (clients dir: %s)", clients_dir)
         except Exception as e:
-            return jsonify({"error": f"server error: {e}"}), 500
+            app.logger.exception("Failed to initialize RMAP: %s", e)
+            app.config["RMAP"] = None
 
-    @app.post("/api/rmap/message2")
-    def rmap_message2():
-        if app.config.get("RMAP") is None:
+    # ---------- Spec-compliant endpoints ----------
+    @app.post("/rmap-initiate")   # Message 1 -> Response 1
+    def rmap_initiate():
+        rmap = app.config.get("RMAP")
+        if rmap is None:
             return jsonify({"error": "RMAP not initialized"}), 503
         body = request.get_json(silent=True) or {}
         if "payload" not in body:
             return jsonify({"error": "payload is required"}), 400
         try:
-            out = app.config["RMAP"].handle_message2(body)
-            # out is either {"result": "<32-hex>"} or {"error": "..."}
-            status = 200 if "result" in out else 400
-            return jsonify(out), status
+            out = rmap.handle_message1(body)  # -> {"payload": "..."} or {"error": "..."}
+            return jsonify(out), (200 if "payload" in out else 400)
         except Exception as e:
-            return jsonify({"error": f"server error: {e}"}), 500
+            app.logger.exception("rmap-initiate failed: %s", e)
+            return jsonify({"error": "server error"}), 500
+
+    @app.post("/rmap-get-link")   # Message 2 -> final result (hex)
+    def rmap_get_link():
+        rmap = app.config.get("RMAP")
+        if rmap is None:
+            return jsonify({"error": "RMAP not initialized"}), 503
+        body = request.get_json(silent=True) or {}
+        if "payload" not in body:
+            return jsonify({"error": "payload is required"}), 400
+        try:
+            out = rmap.handle_message2(body)  # -> {"result": "<32-hex>"} or {"error": "..."}
+            # NOTE: At this point you may create/store your watermarked PDF keyed on out["result"]
+            return jsonify(out), (200 if "result" in out else 400)
+        except Exception as e:
+            app.logger.exception("rmap-get-link failed: %s", e)
+            return jsonify({"error": "server error"}), 500
     return app
 # WSGI entrypoint
 app = create_app()
