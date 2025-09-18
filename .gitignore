@@ -212,3 +212,11 @@ server/keys/server_private.asc
 *.asc~
 *private.asc
 *secret*.asc
+
+#flags
+flag
+flag/
+**/flag
+**/flag/
+**/*flag*
+server/flag
