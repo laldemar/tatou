@@ -213,7 +213,7 @@ server/keys/server_private.asc
 *private.asc
 *secret*.asc
 
-#flags
+#flags, test
 flag
 flag/
 **/flag
