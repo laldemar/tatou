@@ -43,7 +43,7 @@ from watermarking_method import (
 )
 from add_after_eof import AddAfterEOF
 from valdemar_method import ValdemarMethod
-# from Theo_method import TheoMethod // comment in once you have implemented your method
+from Theo_method import TheoMethod # comment in once you have implemented your method
 # from Mathewos_method import MathewosMethod // comment in once you have implemented your method
 
 # --------------------
@@ -53,7 +53,7 @@ from valdemar_method import ValdemarMethod
 METHODS: Dict[str, WatermarkingMethod] = {
     AddAfterEOF.name: AddAfterEOF(),
     ValdemarMethod.name: ValdemarMethod(),
-    # TheoMethod.name: TheoMethod(), // comment in once you have implemented your method
+    TheoMethod.name: TheoMethod(), #comment in once you have implemented your method
     # MathewosMethod.name: MathewosMethod(), // comment in once you have implemented your method
 }
 """Registry of available watermarking methods.
