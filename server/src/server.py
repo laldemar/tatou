@@ -2,6 +2,7 @@ import os
 import io
 import hashlib
 import datetime as dt
+import time
 from pathlib import Path
 from functools import wraps
 
@@ -12,6 +13,8 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
+
+from flask import send_file, url_for, abort
 
 import pickle as _std_pickle
 try:
@@ -43,6 +46,13 @@ def create_app():
     app.config["DB_NAME"] = os.environ.get("DB_NAME", "tatou")
 
     app.config["STORAGE_DIR"].mkdir(parents=True, exist_ok=True)
+
+    # Where the distributable PDF lives inside the container RMAP
+    app.config["RMAP_PDF_PATH"] = os.environ.get("RMAP_PDF_PATH", "/app/storage/handout.pdf")
+    # Link lifetime (seconds) RMAP
+    app.config["RMAP_LINK_TTL"] = int(os.environ.get("RMAP_LINK_TTL", "600"))
+    # In-memory token store: token -> expiry epoch RMAP
+    app.config["RMAP_TOKENS"] = {}
 
     # --- DB engine only (no Table metadata) ---
     def db_url() -> str:
@@ -832,23 +842,30 @@ def create_app():
             "position": position
         }), 201
     
-    # --- RMAP (Roger Michael Authentication Protocol) setup ---
-    # Paths can be overridden with env vars:
-    #   RMAP_KEYS_DIR (default: server/keys)
+    # --- your existing non-RMAP config/routes can be above here ---
+
+    # ====================== RMAP: setup + endpoints ======================
+    # Env:
+    #   RMAP_KEYS_DIR (default: /app/server/keys)
     #   RMAP_SERVER_PRIV_PASSPHRASE (optional)
+    #   RMAP_PDF_PATH (default: /app/storage/handout.pdf)
+    #   RMAP_LINK_TTL (default: 600)
 
-    
- # --- RMAP setup (paths relative to /server) ---
+    # Small config for PDF + in-memory tokens
+    app.config.setdefault("RMAP_PDF_PATH", os.environ.get("RMAP_PDF_PATH", "/app/storage/handout.pdf"))
+    app.config.setdefault("RMAP_LINK_TTL", int(os.environ.get("RMAP_LINK_TTL", "600")))
+    app.config.setdefault("RMAP_TOKENS", {})  # token -> expiry (epoch seconds)
+
+    # Key paths
     SERVER_DIR = Path(__file__).resolve().parents[1]   # /app/server
-    DEFAULT_KEYS_DIR = SERVER_DIR / "keys"             # /app/server/keys
+    DEFAULT_KEYS_DIR = SERVER_DIR / "keys"
     rmap_keys_dir = Path(os.environ.get("RMAP_KEYS_DIR", str(DEFAULT_KEYS_DIR))).resolve()
+    clients_dir = rmap_keys_dir / "clients"
+    server_pub  = rmap_keys_dir / "server_public.asc"
+    server_priv = rmap_keys_dir / "server_private.asc"
+    server_priv_pass = os.environ.get("RMAP_SERVER_PRIV_PASSPHRASE")
 
-    clients_dir = rmap_keys_dir / "clients"            # /server/keys/clients/*.asc (public)
-    server_pub  = rmap_keys_dir / "server_public.asc"  # server public key
-    server_priv = rmap_keys_dir / "server_private.asc" # server private key
-    server_priv_pass = os.environ.get("RMAP_SERVER_PRIV_PASSPHRASE")  # optional
-
-    # Fail fast but keep server up to return 503 from the endpoints
+    # Initialize RMAP
     missing = [p for p in (clients_dir, server_pub, server_priv) if not p.exists()]
     if missing:
         app.logger.error("RMAP key path(s) missing: %s", ", ".join(map(str, missing)))
@@ -867,8 +884,18 @@ def create_app():
             app.logger.exception("Failed to initialize RMAP: %s", e)
             app.config["RMAP"] = None
 
-    # ---------- Spec-compliant endpoints ----------
-    @app.post("/rmap-initiate")   # Message 1 -> Response 1
+    # Helper: mint a one-time, time-limited download link from RMAP result
+    def _rmap_make_link(result_hex: str) -> dict:
+        token = result_hex.lower()
+        expires = int(time.time()) + app.config["RMAP_LINK_TTL"]
+        app.config["RMAP_TOKENS"][token] = expires
+        return {
+            "link": url_for("rmap_download", token=token, _external=True),
+            "expires": expires,
+        }
+
+    # Message 1 -> Response 1
+    @app.post("/rmap-initiate")
     def rmap_initiate():
         rmap = app.config.get("RMAP")
         if rmap is None:
@@ -877,13 +904,14 @@ def create_app():
         if "payload" not in body:
             return jsonify({"error": "payload is required"}), 400
         try:
-            out = rmap.handle_message1(body)  # -> {"payload": "..."} or {"error": "..."}
+            out = rmap.handle_message1(body)  # {"payload": "..."} or {"error": "..."}
             return jsonify(out), (200 if "payload" in out else 400)
         except Exception as e:
             app.logger.exception("rmap-initiate failed: %s", e)
             return jsonify({"error": "server error"}), 500
 
-    @app.post("/rmap-get-link")   # Message 2 -> final result (hex)
+    # Message 2 -> one-time link
+    @app.post("/rmap-get-link")
     def rmap_get_link():
         rmap = app.config.get("RMAP")
         if rmap is None:
@@ -892,13 +920,42 @@ def create_app():
         if "payload" not in body:
             return jsonify({"error": "payload is required"}), 400
         try:
-            out = rmap.handle_message2(body)  # -> {"result": "<32-hex>"} or {"error": "..."}
-            # NOTE: At this point you may create/store your watermarked PDF keyed on out["result"]
-            return jsonify(out), (200 if "result" in out else 400)
+            out = rmap.handle_message2(body)  # {"result": "<32-hex>"} or {"error": "..."}
+            if "result" not in out:
+                return jsonify(out), 400
+            return jsonify(_rmap_make_link(out["result"])), 200
         except Exception as e:
             app.logger.exception("rmap-get-link failed: %s", e)
             return jsonify({"error": "server error"}), 500
+
+    # One-time download endpoint
+    @app.get("/rmap-download/<token>")
+    def rmap_download(token: str):
+        tokens = app.config.get("RMAP_TOKENS", {})
+        expires = tokens.pop(token, None)  # one-time use
+        if not expires or time.time() > expires:
+            abort(404)
+
+        pdf_path = Path(app.config["RMAP_PDF_PATH"])
+        if not pdf_path.exists():
+            app.logger.error("RMAP_PDF_PATH missing: %s", pdf_path)
+            abort(500)
+
+        return send_file(
+            str(pdf_path),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="Group_5.pdf",
+            max_age=0,
+            conditional=False,
+            etag=False,
+            last_modified=None,
+        )
+    # ====================== end RMAP section ======================
+
     return app
+
+
 # WSGI entrypoint
 app = create_app()
 
