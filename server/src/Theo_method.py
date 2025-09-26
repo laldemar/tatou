@@ -1,146 +1,109 @@
-import base64
-import hashlib
-import hmac
-import json
-import fitz
+# server/src/theo_method.py
+from __future__ import annotations
 from typing import Optional
+import base64, hashlib, hmac, json
+import fitz  # PyMuPDF
 from watermarking_method import (
-    WatermarkingError,
-    InvalidKeyError,
-    SecretNotFoundError,
-    WatermarkingMethod,
-    load_pdf_bytes,
+    WatermarkingMethod, PdfSource, load_pdf_bytes,
+    WatermarkingError, InvalidKeyError, SecretNotFoundError
 )
 
+WATERMARK_CONTEXT = b"wm:theo:v1:"
+VISIBLE_TAG = "TheoMethod"
 
 class TheoMethod(WatermarkingMethod):
     name = "theo"
-    description = "Semi-transparent diagonal text watermark across each page."
+    description = "Semi-transparent diagonal text on each page, with hidden payload authenticated by HMAC(key, secret)."
 
-    _CONTEXT = b"wm:theo:v1:"
+    @staticmethod
+    def get_usage() -> str:
+        return ("Embeds faint diagonal text. Stores a hidden payload (secret+MAC). "
+                "position may be topleft/topright/bottomleft/bottomright/center; "
+                "key is required to verify.")
 
-    def embed(
-        self,
-        pdf,
-        *,
-        secret: Optional[str] = None,
-        key: Optional[str] = None,
-        position: Optional[str] = None,
-        intended_for: Optional[str] = None,
-        **kwargs,
-    ) -> bytes:
-        pdf_bytes = load_pdf_bytes(pdf)
+    def is_watermark_applicable(self, pdf: PdfSource, position: str | None = None) -> bool:
         try:
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-        except Exception as e:
-            raise WatermarkingError(f"Failed to open PDF: {e}")
+            load_pdf_bytes(pdf)  # just validate it looks like a PDF
+            return True
+        except Exception:
+            return False
 
-        # Require a secret + key for integrity
+    def add_watermark(self, pdf: PdfSource, secret: str, key: str, position: str | None = None) -> bytes:
         if not secret or not key:
             raise WatermarkingError("Both secret and key are required")
 
-        # Compute HMAC(secret) with the key
-        secret_bytes = secret.encode("utf-8")
-        mac_hex = hmac.new(
-            key.encode("utf-8"),
-            self._CONTEXT + secret_bytes,
-            hashlib.sha256,
-        ).hexdigest()
-
-        # Visible watermark text (no secret here!)
-        wm_parts = ["TheoMethod"]
-        wm_parts.append(f"MAC={mac_hex[:8]}")  # show short fingerprint for debugging
-        if intended_for:
-            wm_parts.append(f"For={intended_for}")
-        text = " | ".join(wm_parts)
-
-        # Place visible text on each page
-        for page in doc:
-            rect = page.rect
-            fontsize = 40
-            x, y = rect.width / 4, rect.height / 2
-
-            if position:
-                pos = position.lower()
-                if pos == "topleft":
-                    x, y = 50, 100
-                elif pos == "topright":
-                    x, y = rect.width - 300, 100
-                elif pos == "bottomleft":
-                    x, y = 50, rect.height - 100
-                elif pos == "bottomright":
-                    x, y = rect.width - 300, rect.height - 100
-                elif pos == "center":
-                    x, y = rect.width / 2 - 100, rect.height / 2
-
-            page.insert_text(
-                (x, y),
-                text=text,
-                fontsize=fontsize,
-                rotate=45,
-                render_mode=2,
-                color=(0.7, 0.7, 0.7),
-                overlay=True,
-            )
-
-            # Also embed the *secret* invisibly
-            hidden_payload = json.dumps({
-                "secret": base64.b64encode(secret_bytes).decode(),
-                "mac": mac_hex
-            })
-            page.insert_text(
-                (1, 1),  # tiny, corner
-                text=hidden_payload,
-                fontsize=1,
-                color=(1, 1, 1),
-                render_mode=3,  # invisible
-                overlay=True,
-            )
-
-        out_bytes = doc.write()
-        doc.close()
-        return out_bytes
-
-    def extract(self, pdf, *, key: Optional[str] = None, **kwargs) -> dict:
-        pdf_bytes = load_pdf_bytes(pdf)
+        data = load_pdf_bytes(pdf)
         try:
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+            doc = fitz.open(stream=data, filetype="pdf")
         except Exception as e:
             raise WatermarkingError(f"Failed to open PDF: {e}")
 
-        for page in doc:
-            text = page.get_text()
-            if "TheoMethod" in text:
-                # Try to recover hidden payload
-                if "secret" in text:
-                    try:
-                        payload_str = text.split("secret")[1]  # crude parse
-                        payload_json = (
-                            "{" + "secret" + payload_str.split("}")[0] + "}"
-                        )
-                        payload = json.loads(payload_json)
-                        secret = base64.b64decode(payload["secret"]).decode()
-                        mac = payload["mac"]
+        try:
+            # HMAC(secret) with context binding
+            mac_hex = hmac.new(key.encode("utf-8"), WATERMARK_CONTEXT + secret.encode("utf-8"), hashlib.sha256).hexdigest()
 
-                        # Verify MAC with provided key
-                        if key:
-                            expected = hmac.new(
-                                key.encode("utf-8"),
-                                self._CONTEXT + secret.encode(),
-                                hashlib.sha256,
-                            ).hexdigest()
-                            if not hmac.compare_digest(mac, expected):
-                                raise InvalidKeyError(
-                                    "Provided key failed to authenticate the watermark"
-                                )
+            # Visible text line (no secret in clear)
+            visible = f"{VISIBLE_TAG} | MAC={mac_hex[:8]}"
 
-                        return {
-                            "found": True,
-                            "secret": secret,
-                            "method": self.name,
-                            "position": kwargs.get("position"),
-                        }
-                    except Exception:
+            # Tiny hidden payload (base64-secret + MAC) that we can parse back
+            hidden_payload = json.dumps({
+                "theo_secret_b64": base64.b64encode(secret.encode("utf-8")).decode("ascii"),
+                "theo_mac_hex": mac_hex
+            })
+
+            for page in doc:
+                rect = page.rect
+                # position selection
+                x, y = rect.width/4, rect.height/2
+                p = (position or "").lower()
+                if p == "topleft": x, y = 50, 100
+                elif p == "topright": x, y = rect.width - 300, 100
+                elif p == "bottomleft": x, y = 50, rect.height - 100
+                elif p == "bottomright": x, y = rect.width - 300, rect.height - 100
+                elif p == "center": x, y = rect.width/2 - 100, rect.height/2
+
+                # visible diagonal overlay
+                page.insert_text((x, y), text=visible, fontsize=40, rotate=45,
+                                 render_mode=2, color=(0.7, 0.7, 0.7), overlay=True)
+
+                # very small, very faint payload (still extractable via get_text)
+                page.insert_text((1, 1), text=hidden_payload, fontsize=1,
+                                 color=(1, 1, 1), render_mode=3, overlay=True)
+
+            return doc.tobytes()
+        finally:
+            doc.close()
+
+    def read_secret(self, pdf: PdfSource, key: str) -> str:
+        data = load_pdf_bytes(pdf)
+        try:
+            doc = fitz.open(stream=data, filetype="pdf")
+        except Exception as e:
+            raise WatermarkingError(f"Failed to open PDF: {e}")
+
+        try:
+            # scan for our hidden payload
+            for page in doc:
+                txt = page.get_text() or ""
+                if VISIBLE_TAG in txt and "theo_secret_b64" in txt and "theo_mac_hex" in txt:
+                    # crude but effective parse: find the JSON object boundaries
+                    start = txt.find('{"theo_secret_b64"')
+                    if start == -1:
                         continue
+                    end = txt.find("}", start)
+                    if end == -1:
+                        continue
+                    payload = json.loads(txt[start:end+1])
+                    secret = base64.b64decode(payload["theo_secret_b64"]).decode("utf-8")
+                    mac_hex = payload["theo_mac_hex"]
 
-        return {"found": False}
+                    expected = hmac.new(key.encode("utf-8"),
+                                        WATERMARK_CONTEXT + secret.encode("utf-8"),
+                                        hashlib.sha256).hexdigest()
+                    if not hmac.compare_digest(mac_hex, expected):
+                        raise InvalidKeyError("Provided key failed to authenticate the watermark")
+                    return secret
+
+            raise SecretNotFoundError("No Theo watermark found")
+        finally:
+            doc.close()
