@@ -80,16 +80,13 @@ class MathewosMethod(WatermarkingMethod):
 
             for page in doc:
                 x, y = _resolve_pos(page, position)
-                # draw very small faint text; wrap_contents keeps page clean
                 with page.wrap_contents():
                     page.insert_text(
                         (x, y),
                         marker,
                         fontsize=2,
                         fontname="helv",
-                        color=(0.98, 0.98, 0.98),
-                        fill_opacity=0.03,   # very faint
-                        render_mode=0,
+                        color=(0.98, 0.98, 0.98)  # nästan vit text
                     )
 
             return doc.tobytes()
