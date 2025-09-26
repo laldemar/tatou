@@ -1,6 +1,6 @@
 from __future__ import annotations
-from typing import Optional, Iterable
-import hmac, hashlib
+from typing import Tuple
+import hmac, hashlib, base64
 import fitz  # PyMuPDF
 
 from watermarking_method import (
@@ -12,149 +12,60 @@ from watermarking_method import (
     WatermarkingError,
 )
 
-# ------- zero-width encoding (samma modell som den fungerande metoden) -------
-ZW_FOR_BIT = {"0": "\u200B", "1": "\u200C"}  # ZWSP / ZWNJ
-BIT_FOR_ZW = {v: k for k, v in ZW_FOR_BIT.items()}
+# ---------- helpers ----------
+def _hmac_b64(key: str, msg: str) -> str:
+    mac = hmac.new(key.encode("utf-8"), msg.encode("utf-8"), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(mac).decode("ascii").rstrip("=")
 
-# Distinkta "sentinel"-markörer för secret respektive HMAC-tag
-S_S = "\u200D\u200D\u200D\u200D"  # ZWJ x4
-E_S = "\u2060\u2060\u2060\u2060"  # WJ  x4
-S_T = "\u200E\u200E\u200E\u200E"  # LRM x4
-E_T = "\u200F\u200F\u200F\u200F"  # RLM x4
+def _resolve_pos(page: "fitz.Page", position: str | None) -> Tuple[float, float]:
+    """Map common names or 'x,y' to a point in page coordinates."""
+    p = (position or "").strip().lower()
+    w, h = page.rect.width, page.rect.height
+    if "," in p:
+        try:
+            x, y = [float(v) for v in p.split(",", 1)]
+            return x, y
+        except Exception:
+            pass
+    mapping = {
+        "top-left": (36, 36),
+        "top-right": (w - 36, 36),
+        "bottom-left": (36, h - 36),
+        "bottom-right": (w - 36, h - 36),
+        "center": (w / 2, h / 2),
+        "": (50, h - 30),  # default
+    }
+    return mapping.get(p, mapping[""])
 
-def _str_to_bits(s: str) -> str:
-    if not isinstance(s, str) or s == "":
-        raise ValueError("secret must be a non-empty string")
-    return "".join(format(ord(c), "08b") for c in s)
-
-def _bits_to_str(bits: str) -> str:
-    n = (len(bits) // 8) * 8
-    return "".join(chr(int(bits[i:i + 8], 2)) for i in range(0, n, 8))
-
-def _encode_zw(s: str) -> str:
-    return "".join(ZW_FOR_BIT[b] for b in _str_to_bits(s))
-
-def _decode_zw(s: str) -> str:
-    bits = "".join(BIT_FOR_ZW.get(ch, "") for ch in s)
-    return _bits_to_str(bits)
-
-def _slice_between(s: str, start: str, end: str) -> str | None:
-    i = s.find(start)
-    if i == -1:
-        return None
-    j = s.find(end, i + len(start))
-    if j == -1:
-        return None
-    return s[i + len(start): j]
-
-def _hmac_tag_hex16(key: str, secret: str) -> str:
-    # 16 hex-tecken (64 bit) räcker för etikett/jämförelse och matchar den fungerande metoden
-    return hmac.new(key.encode(), secret.encode(), hashlib.sha256).hexdigest()[:16]
-
-
+# ---------- method ----------
 class MathewosMethod(WatermarkingMethod):
     name = "mathewos"
-    description = "Zero-width watermark (secret + HMAC) in content and metadata subject. Position ignored."
+    description = "Invisible micro-text + HMAC watermark stored in PDF 'subject'. Uses key/secret/position."
 
     @staticmethod
     def get_usage() -> str:
-        return ("Embeds the secret using zero-width Unicode and also stashes it in metadata (subject). "
-                "Use the same key on read to verify via HMAC(secret, key). Position is accepted but ignored.")
+        return ("Embeds a watermark payload in PDF metadata (subject) as "
+                "[TATOU]<method>|<hmac>|<secret>[/TATOU] and draws a tiny, faint "
+                "marker text on each page. Position can be a name ('top-right', "
+                "'center', ...) or 'x,y' in points.")
 
-    # ---------- applicability ----------
-    def is_watermark_applicable(self, pdf: PdfSource, position: Optional[str] = None) -> bool:
-        data = load_pdf_bytes(pdf)
+    # ---- applicability ----
+    def is_watermark_applicable(self, pdf: PdfSource, position: str | None = None) -> bool:
         try:
-            fitz.open(stream=data, filetype="pdf").close()
+            load_pdf_bytes(pdf)  # validates PDF header / bytes
             return True
         except Exception:
             return False
 
-    # ------------ embedding ------------
-    def add_watermark(self, pdf: PdfSource, secret: str, key: str, position: Optional[str] = None) -> bytes:
-        data = load_pdf_bytes(pdf)
-        try:
-            tag = _hmac_tag_hex16(key or "", secret)
-            zw_secret = _encode_zw(secret)
-            zw_tag    = _encode_zw(tag)
-
-            payload_secret = S_S + zw_secret + E_S
-            payload_tag    = S_T + zw_tag    + E_T
-
-            doc = fitz.open(stream=data, filetype="pdf")
-
-            # A) tiny boxes på varje sida (som i fungerande metod)
-            for page in doc:
-                r = page.rect
-                # Flytta in några punkter från kanten för att undvika out-of-bounds
-                x1, y1 = r.x1 - 20, r.y1 - 20
-                # smala rutor; zero-width-tecken tar nästan ingen plats visuellt
-                page.insert_textbox(fitz.Rect(x1-10, y1-5, x1, y1), payload_secret, fontsize=1, fontname="helv")
-                page.insert_textbox(fitz.Rect(x1-20, y1-5, x1-10, y1), payload_tag,    fontsize=1, fontname="helv")
-
-            # B) även i metadata: använd endast tillåtna fält → 'subject'
-            md = dict(doc.metadata or {})
-            md["subject"] = (md.get("subject") or "") + payload_secret + payload_tag
-            doc.set_metadata(md)
-
-            out = doc.tobytes()
-            doc.close()
-            if not out:
-                raise WatermarkingError("render produced empty PDF")
-            return out
-        except ValueError:
-            raise
-        except Exception as e:
-            raise WatermarkingError(f"embedding failed: {e!r}")
-
-    # ------------- reading -------------
-    def _safe_load_page(self, doc: fitz.Document, i: int):
-        try:
-            return doc.load_page(i)
-        except Exception:
-            return None
-
-    def _safe_get_text(self, page: fitz.Page, mode: str) -> str:
-        try:
-            t = page.get_text(mode)
-            return t if isinstance(t, str) else ""
-        except Exception:
-            return ""
-
-    def _extract_text_variants(self, doc: fitz.Document) -> Iterable[str]:
-        # 0) metadata först (ofta orörd)
-        md = doc.metadata or {}
-        meta = (md.get("subject") or "") + (md.get("keywords") or "") + (md.get("title") or "")
-        if meta:
-            yield meta
-
-        # 1) raw (bevarar ofta dolda tecken)
-        yield "".join(
-            self._safe_get_text(p, "raw") for p in (self._safe_load_page(doc, i) for i in range(len(doc))) if p
-        )
-        # 2) plain text
-        yield "".join(
-            self._safe_get_text(p, "text") for p in (self._safe_load_page(doc, i) for i in range(len(doc))) if p
-        )
-        # 3) rawdict-spans (mest troget men kan krascha på vissa filer → därför try/except)
-        parts: list[str] = []
-        for i in range(len(doc)):
-            p = self._safe_load_page(doc, i)
-            if not p:
-                continue
-            try:
-                rd = p.get_text("rawdict")
-                for b in (rd.get("blocks", []) or []):
-                    for l in (b.get("lines", []) or []):
-                        for s in (l.get("spans", []) or []):
-                            t = s.get("text", "")
-                            if t:
-                                parts.append(t)
-            except Exception:
-                continue
-        yield "".join(parts)
-
-    def read_secret(self, pdf: PdfSource, key: str) -> str:
+    # ---- embed ----
+    def add_watermark(
+        self,
+        pdf: PdfSource,
+        secret: str,
+        key: str,
+        position: str | None = None,
+    ) -> bytes:
+        """Embed secret + HMAC in metadata(subject) and add tiny marker text."""
         data = load_pdf_bytes(pdf)
         try:
             doc = fitz.open(stream=data, filetype="pdf")
@@ -162,31 +73,71 @@ class MathewosMethod(WatermarkingMethod):
             raise WatermarkingError(f"Failed to open PDF: {e}")
 
         try:
-            for txt in self._extract_text_variants(doc):
-                if not txt:
-                    continue
+            # Build payload placed in 'subject' (allowed field in PyMuPDF)
+            tag_b64 = _hmac_b64(key, secret)
+            payload = f"[TATOU]{self.name}|{tag_b64}|{secret}[/TATOU]"
 
-                sec_chunk = _slice_between(txt, S_S, E_S)
-                tag_chunk = _slice_between(txt, S_T, E_T)
-                if sec_chunk is None or tag_chunk is None:
-                    continue
+            meta = dict(doc.metadata or {})
+            prev = (meta.get("subject") or "").strip()
+            meta["subject"] = (prev + " " + payload).strip()
+            doc.set_metadata(meta)
 
-                secret = _decode_zw(sec_chunk)
-                tag    = _decode_zw(tag_chunk)
-                if not secret:
-                    continue
+            # Tiny page marker (almost white) – robustness hint only
+            marker = hashlib.sha256((tag_b64 + secret).encode()).hexdigest()[:12]
+            for page in doc:
+                x, y = _resolve_pos(page, position)
+                try:
+                    page.insert_text((x, y), marker, fontsize=2, fontname="helv",
+                                     color=(0.98, 0.98, 0.98))
+                except Exception:
+                    # Fallback on older builds
+                    try:
+                        page.insert_textbox(fitz.Rect(x, y, x + 12, y + 6), marker,
+                                            fontsize=1, fontname="helv")
+                    except Exception:
+                        pass  # metadata already carries the watermark
 
-                if tag != _hmac_tag_hex16(key or "", secret):
-                    raise InvalidKeyError("invalid key for this watermark")
-
+            out = doc.tobytes()
+            if not out:
+                raise WatermarkingError("render produced empty PDF")
+            return out
+        finally:
+            try:
                 doc.close()
-                return secret
+            except Exception:
+                pass
 
-            doc.close()
-            raise SecretNotFoundError("no zero-width payload found")
-
-        except (SecretNotFoundError, InvalidKeyError):
-            raise
+    # ---- read ----
+    def read_secret(self, pdf: PdfSource, key: str) -> str:
+        """Read payload from 'subject', verify HMAC(key, secret), return secret."""
+        data = load_pdf_bytes(pdf)
+        try:
+            doc = fitz.open(stream=data, filetype="pdf")
         except Exception as e:
-            msg = f"{e.__class__.__name__}: {e.args[0] if getattr(e, 'args', None) else ''}"
-            raise WatermarkingError(f"decode failed: {msg}")
+            raise WatermarkingError(f"Failed to open PDF: {e}")
+
+        try:
+            subject = (doc.metadata or {}).get("subject") or ""
+            start = subject.find("[TATOU]")
+            end = subject.find("[/TATOU]", start + 7)
+            if start == -1 or end == -1:
+                raise SecretNotFoundError("No watermark found")
+
+            inside = subject[start + 7:end]
+            try:
+                method_name, tag_b64, emb_secret = inside.split("|", 2)
+            except ValueError:
+                raise WatermarkingError("Corrupted watermark payload")
+
+            # Optional sanity check: method name
+            # if method_name != self.name: pass
+
+            if _hmac_b64(key, emb_secret) != tag_b64:
+                raise InvalidKeyError("Invalid watermark (HMAC mismatch)")
+
+            return emb_secret
+        finally:
+            try:
+                doc.close()
+            except Exception:
+                pass
