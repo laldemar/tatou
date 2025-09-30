@@ -10,6 +10,7 @@ services:
     volumes:
       - user-files:/app/storage
       - ./server/keys:/app/server/keys:ro
+      - ./server/logs:/app/logs
     environment:
       - PYTHONUNBUFFERED=1
       # DB connection details for future use by the API

@@ -220,3 +220,7 @@ flag/
 **/flag/
 **/*flag*
 server/flag
+
+# Security logs (not for version control)
+server/logs/*
+!server/logs/.gitkeep
