@@ -30,6 +30,26 @@ from watermarking_method import WatermarkingMethod
 from rmap.identity_manager import IdentityManager #added for RMAP
 from rmap.rmap import RMAP #added for RMAP rmap is fun
 
+#For logging purposes
+import logging
+
+
+
+# --- Security Logger Setup ---
+logger = logging.getLogger("tatou-security")
+handler = logging.FileHandler("/app/logs/security.log")
+formatter = logging.Formatter(
+    '%(asctime)s - %(levelname)s - %(message)s'
+)
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
+def log_event(event, user=None, status="INFO"):
+    """Helper for structured security logging"""
+    ip = request.remote_addr if request else "N/A"
+    logger.info(f"event={event}, user={user}, ip={ip}, status={status}")
+
 
 def create_app():
     app = Flask(__name__)
@@ -168,9 +188,11 @@ def create_app():
             return jsonify({"error": f"database error: {str(e)}"}), 503
 
         if not row or not check_password_hash(row.hpassword, password):
+            log_event("login-failed", user=email, status="FAIL")
             return jsonify({"error": "invalid credentials"}), 401
 
         token = _serializer().dumps({"uid": int(row.id), "login": row.login, "email": row.email})
+        log_event("login-success", user=email, status="OK")
         return jsonify({"token": token, "token_type": "bearer", "expires_in": app.config["TOKEN_TTL_SECONDS"]}), 200
 
     # POST /api/upload-document  (multipart/form-data)
