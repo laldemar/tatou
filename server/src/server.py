@@ -147,6 +147,7 @@ def create_app():
         login = (payload.get("login") or "").strip()
         password = payload.get("password") or ""
         if not email or not login or not password:
+            log_event("user-create-missing-fields", user=email or "unknown", status="FAIL")
             return jsonify({"error": "email, login, and password are required"}), 400
 
         hpw = generate_password_hash(password)
@@ -163,10 +164,13 @@ def create_app():
                     {"id": uid},
                 ).one()
         except IntegrityError:
+            log_event("user-create-duplicate", user=email, status="FAIL")
             return jsonify({"error": "email or login already exists"}), 409
         except Exception as e:
+            log_event("user-create-db-error", user=email, status="ERROR")
             return jsonify({"error": f"database error: {str(e)}"}), 503
-
+        
+        log_event("user-create-success", user=email, status="OK")
         return jsonify({"id": row.id, "email": row.email, "login": row.login}), 201
 
     # POST /api/login {login, password}
@@ -200,9 +204,11 @@ def create_app():
     @require_auth
     def upload_document():
         if "file" not in request.files:
+            log_event("document-upload-missing-file", user=g.user["email"], status="FAIL")
             return jsonify({"error": "file is required (multipart/form-data)"}), 400
         file = request.files["file"]
         if not file or file.filename == "":
+            log_event("document-upload-empty-filename", user=g.user["email"], status="FAIL")
             return jsonify({"error": "empty filename"}), 400
 
         fname = file.filename
@@ -244,7 +250,15 @@ def create_app():
                     {"id": did},
                 ).one()
         except Exception as e:
+            log_event("document-upload-db-error", user=g.user["email"], status="ERROR", details={"filename": fname})
             return jsonify({"error": f"database error: {str(e)}"}), 503
+        
+        log_event(
+        "document-upload-success",
+        user=g.user["email"],
+        status="OK",
+        details={"filename": fname, "sha256": sha_hex, "size": size}
+        )
 
         return jsonify({
             "id": int(row.id),
