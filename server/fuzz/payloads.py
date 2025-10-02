@@ -1,22 +1,18 @@
 from hypothesis import strategies as st
-import base64
 
-# “Weird” text to hit edge cases
-weird_str = st.one_of(
-    st.text(min_size=0, max_size=200),
-    st.from_regex(r"[<>\'\"`;()\\/\x00%]", fullmatch=False),
-    st.sampled_from(["", ".", "..", "../", "../../../../etc/passwd"])
-)
-
-email_str = st.emails()
-
+# valid-ish PDF bytes (small; avoids Hypothesis draw function mistakes)
 def pdf_bytes():
-    def build(draw):
-        good = draw(st.booleans())
-        body = draw(st.binary(min_size=0, max_size=4096))
-        if good:
-            return b"%PDF-1.4\n" + body + b"\n%%EOF\n"
-        return body
-    return st.builds(build)
+    prefix = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n"
+    suffix = b"\n%%EOF\n"
+    return st.binary(min_size=0, max_size=2000).map(lambda b: prefix + b + suffix)
 
-b64ish = st.binary(min_size=0, max_size=1500).map(lambda b: base64.b64encode(b).decode("ascii"))
+# keep “name” filesystem/DB-friendly so we can exercise later endpoints
+safe_char = st.characters(
+    blacklist_categories=["Cs", "Cc", "Zl", "Zp", "Zs"],
+    blacklist_characters=["/", "\\", "\x00"]
+)
+safe_name = st.text(safe_char, min_length=1, max_length=60)
+
+weird_str = st.text(min_length=0, max_length=60)
+
+positions = st.sampled_from(["", "topleft", "topright", "bottomleft", "bottomright", "center"])

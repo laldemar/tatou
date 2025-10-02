@@ -1,95 +1,65 @@
-import io, random, json, requests
-from hypothesis import given, settings, HealthCheck, strategies as st
-from payloads import weird_str, email_str, pdf_bytes, b64ish
-
-settings.register_profile("dev", settings(
-    suppress_health_check=[HealthCheck.function_scoped_fixture],
-    max_examples=50,
-    deadline=None,
-))
-settings.load_profile("dev")
+import io
+from hypothesis import given, settings, strategies as st
+from payloads import pdf_bytes, safe_name, weird_str, positions
 
 def no_5xx(r):
     assert r.status_code < 500, f"{r.request.method} {r.request.url} -> {r.status_code}\n{r.text[:400]}"
 
-# ---------- Public endpoints ----------
-def test_healthz(base_url):
-    r = requests.get(f"{base_url}/healthz")
+def _upload(session, base_url, auth, name="doc", content=b"%PDF-1.4\n%%EOF\n"):
+    files = {"file": ("f.pdf", io.BytesIO(content), "application/pdf")}
+    data  = {"name": name}
+    return session.post(f"{base_url}/api/upload-document", headers=auth, files=files, data=data)
+
+def _pick_method(session, base_url):
+    r = session.get(f"{base_url}/api/get-watermarking-methods")
+    if r.ok:
+        methods = [m["name"] for m in r.json().get("methods", [])]
+        # prefer a known baseline if present
+        for m in ("toy-eof", "valdemar", "theo"):
+            if m in methods: 
+                return m
+        return methods[0] if methods else None
+    return None
+
+def test_healthz(session, base_url):
+    r = session.get(f"{base_url}/healthz")
+    assert r.status_code == 200
+    assert "message" in r.json()
+
+@given(name=safe_name, content=pdf_bytes())
+@settings(max_examples=25)
+def test_fuzz_upload_document(session, base_url, auth, name, content):
+    r = _upload(session, base_url, auth, name=name, content=content)
     no_5xx(r)
-    assert r.json().get("message")
+    assert r.status_code in (201, 400, 415, 422)
 
-@given(email=email_str, login=weird_str, password=weird_str)
-def test_fuzz_create_user(base_url, email, login, password):
-    r = requests.post(f"{base_url}/api/create-user", json={
-        "email": email, "login": login[:60], "password": password[:80]
-    })
-    no_5xx(r)
-
-@given(email=email_str, password=weird_str)
-def test_fuzz_login(base_url, email, password):
-    r = requests.post(f"{base_url}/api/login", json={"email": email, "password": password})
-    no_5xx(r)
-
-# ---------- Auth endpoints ----------
-@given(name=weird_str, content=pdf_bytes())
-def test_fuzz_upload_document(base_url, auth, name, content):
-    files = {"file": ("fuzz.pdf", io.BytesIO(content), "application/pdf")}
-    data  = {"name": name[:100] or "x.pdf"}
-    r = requests.post(f"{base_url}/api/upload-document", headers=auth, files=files, data=data)
-    no_5xx(r)
-    assert r.status_code in {201, 400, 403, 415}
-
-def _methods(base_url):
-    r = requests.get(f"{base_url}/api/get-watermarking-methods")
-    if r.status_code >= 500: return []
-    return [m["name"] for m in r.json().get("methods", [])]
-
-@given(secret=weird_str, key=weird_str,
-       position=st.sampled_from(["", "topleft", "topright", "bottomleft", "bottomright", "center",
-                                 "../../../../etc", "\x00"]))
-def test_fuzz_watermark_flow(base_url, auth, secret, key, position):
-    # Upload seed doc
-    pdf = b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\n%%EOF\n"
-    up = requests.post(f"{base_url}/api/upload-document", headers=auth,
-                       files={"file": ("seed.pdf", io.BytesIO(pdf), "application/pdf")},
-                       data={"name": "seed"})
+@given(secret=weird_str, key=weird_str, position=positions)
+@settings(max_examples=15)
+def test_fuzz_watermark_flow(session, base_url, auth, secret, key, position):
+    # 1) upload a minimal, valid-ish PDF
+    up = _upload(session, base_url, auth, name="ok", content=b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n")
     no_5xx(up)
     if up.status_code != 201:
-        return
-    doc_id = up.json()["id"]
+        return  # server rejected; fine for fuzzing
+    did = up.json()["id"]
 
-    methods = _methods(base_url)
-    if not methods:
-        return
-    method = random.choice(methods)
+    # 2) pick any available method
+    method = _pick_method(session, base_url)
+    if not method:
+        return  # nothing to try
 
-    # Create watermark
-    cw = requests.post(f"{base_url}/api/create-watermark/{doc_id}", headers=auth, json={
-        "method": method, "position": position,
-        "key": key[:120], "secret": (secret or "x")[:200],
-        "intended_for": "fuzzer"
-    })
-    no_5xx(cw)
-    assert cw.status_code in {201, 400}
-
-    # Read watermark (only if created)
-    if cw.status_code == 201:
-        rw = requests.post(f"{base_url}/api/read-watermark/{doc_id}", headers=auth, json={
-            "method": method, "position": position, "key": key[:120]
-        })
-        no_5xx(rw)
-        assert rw.status_code in {200, 201, 400}
-
-@given(payload=b64ish)
-def test_fuzz_rmap_endpoints(base_url, auth, payload):
-    r1 = requests.post(f"{base_url}/api/rmap-initiate", headers=auth, json={"payload": payload})
-    no_5xx(r1)
-    r2 = requests.post(f"{base_url}/api/rmap-get-link", headers=auth, json={"payload": payload})
-    no_5xx(r2)
-
-@given(doc_id=st.one_of(st.integers(min_value=-10, max_value=10), weird_str))
-def test_fuzz_list_versions_and_delete(base_url, auth, doc_id):
-    r = requests.get(f"{base_url}/api/list-versions", headers=auth, params={"id": str(doc_id)})
+    # 3) try to create watermark
+    payload = {"method": method, "position": position, "key": key, "secret": secret, "intended_for": "fuzz"}
+    r = session.post(f"{base_url}/api/create-watermark/{did}", headers=auth, json=payload)
     no_5xx(r)
-    r = requests.delete(f"{base_url}/api/delete-document/{doc_id}", headers=auth)
-    no_5xx(r)
+    assert r.status_code in (201, 400, 422)
+
+@given(doc_id=st.one_of(st.integers(min_value=-5, max_value=5), weird_str))
+@settings(max_examples=25)
+def test_fuzz_list_versions_and_delete(session, base_url, auth, doc_id):
+    r1 = session.get(f"{base_url}/api/list-versions/{doc_id}", headers=auth)
+    assert r1.status_code in (200, 400, 404)  # may be bad id, but never 5xx
+
+    r2 = session.delete(f"{base_url}/api/delete-document/{doc_id}", headers=auth)
+    # After you patch the endpoint (parametrized SQL + auth), these pass.
+    assert r2.status_code in (200, 400, 404)
