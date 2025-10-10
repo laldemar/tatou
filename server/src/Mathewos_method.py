@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Tuple
 import hmac, hashlib, base64
-import fitz  # PyMuPDF
+import fitz  # PyMuPDF test
 
 from watermarking_method import (
     WatermarkingMethod,
