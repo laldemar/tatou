@@ -90,3 +90,76 @@ def test_fuzz_list_versions_and_delete(session, base_url, auth, doc_id):
         record_issue("server-500-delete", r2.request, r2)
         pytest.xfail(f"Server 5xx on delete: {r2.status_code}")
     assert r2.status_code in (200, 400, 404, 405)
+
+
+
+
+OLd upload-document:
+    # POST /api/upload-document  (multipart/form-data)
+    @app.post("/api/upload-document")
+    @require_auth
+    def upload_document():
+        if "file" not in request.files:
+            log_event("document-upload-missing-file", user=g.user["email"], status="FAIL")
+            return jsonify({"error": "file is required (multipart/form-data)"}), 400
+        file = request.files["file"]
+        if not file or file.filename == "":
+            log_event("document-upload-empty-filename", user=g.user["email"], status="FAIL")
+            return jsonify({"error": "empty filename"}), 400
+
+        fname = file.filename
+
+        user_dir = app.config["STORAGE_DIR"] / "files" / g.user["login"]
+        user_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+        final_name = request.form.get("name") or fname
+        stored_name = f"{ts}__{fname}"
+        stored_path = user_dir / stored_name
+        file.save(stored_path)
+
+        sha_hex = _sha256_file(stored_path)
+        size = stored_path.stat().st_size
+
+        try:
+            with get_engine().begin() as conn:
+                conn.execute(
+                    text("""
+                        INSERT INTO Documents (name, path, ownerid, sha256, size)
+                        VALUES (:name, :path, :ownerid, UNHEX(:sha256hex), :size)
+                    """),
+                    {
+                        "name": final_name,
+                        "path": str(stored_path),
+                        "ownerid": int(g.user["id"]),
+                        "sha256hex": sha_hex,
+                        "size": int(size),
+                    },
+                )
+                did = int(conn.execute(text("SELECT LAST_INSERT_ID()")).scalar())
+                row = conn.execute(
+                    text("""
+                        SELECT id, name, creation, HEX(sha256) AS sha256_hex, size
+                        FROM Documents
+                        WHERE id = :id
+                    """),
+                    {"id": did},
+                ).one()
+        except Exception as e:
+            log_event("document-upload-db-error", user=g.user["email"], status="ERROR", details={"filename": fname})
+            return jsonify({"error": f"database error: {str(e)}"}), 503
+        
+        log_event(
+        "document-upload-success",
+        user=g.user["email"],
+        status="OK",
+        details={"filename": fname, "sha256": sha_hex, "size": size}
+        )
+
+        return jsonify({
+            "id": int(row.id),
+            "name": row.name,
+            "creation": row.creation.isoformat() if hasattr(row.creation, "isoformat") else str(row.creation),
+            "sha256": row.sha256_hex,
+            "size": int(row.size),
+        }), 201

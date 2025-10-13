@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 from functools import wraps
 
-from flask import Flask, jsonify, request, g, send_file
+from flask import Flask, jsonify, request, g, send_file, url_for, abort
 from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
@@ -14,33 +14,25 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 
-from flask import send_file, url_for, abort
-
 import pickle as _std_pickle
 try:
     import dill as _pickle  # allows loading classes not importable by module path
 except Exception:  # dill is optional
     _pickle = _std_pickle
 
-
 import watermarking_utils as WMUtils
 from watermarking_method import WatermarkingMethod
-#from watermarking_utils import METHODS, apply_watermark, read_watermark, explore_pdf, is_watermarking_applicable, get_method
 
-from rmap.identity_manager import IdentityManager #added for RMAP
-from rmap.rmap import RMAP #added for RMAP rmap is fun
+from rmap.identity_manager import IdentityManager
+from rmap.rmap import RMAP
 
-#For logging purposes
+# For logging purposes
 import logging
-
-
 
 # --- Security Logger Setup ---
 logger = logging.getLogger("tatou-security")
 handler = logging.FileHandler("/app/logs/security.log")
-formatter = logging.Formatter(
-    '%(asctime)s - %(levelname)s - %(message)s'
-)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
@@ -67,11 +59,11 @@ def create_app():
 
     app.config["STORAGE_DIR"].mkdir(parents=True, exist_ok=True)
 
-    # Where the distributable PDF lives inside the container RMAP
+    # Where the distributable PDF lives inside the container (RMAP)
     app.config["RMAP_PDF_PATH"] = os.environ.get("RMAP_PDF_PATH", "/app/storage/handout.pdf")
-    # Link lifetime (seconds) RMAP
+    # Link lifetime (seconds) (RMAP)
     app.config["RMAP_LINK_TTL"] = int(os.environ.get("RMAP_LINK_TTL", "600"))
-    # In-memory token store: token -> expiry epoch RMAP
+    # In-memory token store: token -> expiry epoch (RMAP)
     app.config["RMAP_TOKENS"] = {}
 
     # --- DB engine only (no Table metadata) ---
@@ -120,7 +112,7 @@ def create_app():
         return h.hexdigest()
 
     # --- Routes ---
-    
+
     @app.route("/<path:filename>")
     def static_files(filename):
         return app.send_static_file(filename)
@@ -128,8 +120,10 @@ def create_app():
     @app.route("/")
     def home():
         return app.send_static_file("index.html")
-    
+
+    # Health checks (support both paths)
     @app.get("/healthz")
+    @app.get("/api/healthz")
     def healthz():
         try:
             with get_engine().connect() as conn:
@@ -169,11 +163,11 @@ def create_app():
         except Exception as e:
             log_event("user-create-db-error", user=email, status="ERROR")
             return jsonify({"error": f"database error: {str(e)}"}), 503
-        
+
         log_event("user-create-success", user=email, status="OK")
         return jsonify({"id": row.id, "email": row.email, "login": row.login}), 201
 
-    # POST /api/login {login, password}
+    # POST /api/login {email, password}
     @app.post("/api/login")
     def login():
         payload = request.get_json(silent=True) or {}
@@ -213,14 +207,16 @@ def create_app():
 
         fname = file.filename
 
-        user_dir = app.config["STORAGE_DIR"] / "files" / g.user["login"]
+        # Ensure STORAGE_DIR is Path and use string for file.save()
+        storage_root = Path(app.config["STORAGE_DIR"]).resolve()
+        user_dir = storage_root / "files" / g.user["login"]
         user_dir.mkdir(parents=True, exist_ok=True)
 
         ts = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
         final_name = request.form.get("name") or fname
         stored_name = f"{ts}__{fname}"
         stored_path = user_dir / stored_name
-        file.save(stored_path)
+        file.save(str(stored_path))
 
         sha_hex = _sha256_file(stored_path)
         size = stored_path.stat().st_size
@@ -252,12 +248,12 @@ def create_app():
         except Exception as e:
             log_event("document-upload-db-error", user=g.user["email"], status="ERROR", details={"filename": fname})
             return jsonify({"error": f"database error: {str(e)}"}), 503
-        
+
         log_event(
-        "document-upload-success",
-        user=g.user["email"],
-        status="OK",
-        details={"filename": fname, "sha256": sha_hex, "size": size}
+            "document-upload-success",
+            user=g.user["email"],
+            status="OK",
+            details={"filename": fname, "sha256": sha_hex, "size": size}
         )
 
         return jsonify({
@@ -295,8 +291,6 @@ def create_app():
         } for r in rows]
         return jsonify({"documents": docs}), 200
 
-
-
     # GET /api/list-versions
     @app.get("/api/list-versions")
     @app.get("/api/list-versions/<int:document_id>")
@@ -309,7 +303,7 @@ def create_app():
                 document_id = int(document_id)
             except (TypeError, ValueError):
                 return jsonify({"error": "document id required"}), 400
-        
+
         try:
             with get_engine().connect() as conn:
                 rows = conn.execute(
@@ -334,8 +328,7 @@ def create_app():
             "method": r.method,
         } for r in rows]
         return jsonify({"versions": versions}), 200
-    
-    
+
     # GET /api/list-all-versions
     @app.get("/api/list-all-versions")
     @require_auth
@@ -363,13 +356,13 @@ def create_app():
             "method": r.method,
         } for r in rows]
         return jsonify({"versions": versions}), 200
-    
+
     # GET /api/get-document or /api/get-document/<id>  → returns the PDF (inline)
     @app.get("/api/get-document")
     @app.get("/api/get-document/<int:document_id>")
     @require_auth
     def get_document(document_id: int | None = None):
-    
+
         # Support both path param and ?id=/ ?documentid=
         if document_id is None:
             document_id = request.args.get("id") or request.args.get("documentid")
@@ -377,7 +370,7 @@ def create_app():
                 document_id = int(document_id)
             except (TypeError, ValueError):
                 return jsonify({"error": "document id required"}), 400
-        
+
         try:
             with get_engine().connect() as conn:
                 row = conn.execute(
@@ -424,11 +417,11 @@ def create_app():
 
         resp.headers["Cache-Control"] = "private, max-age=0, must-revalidate"
         return resp
-    
+
     # GET /api/get-version/<link>  → returns the watermarked PDF (inline)
     @app.get("/api/get-version/<link>")
     def get_version(link: str):
-        
+
         try:
             with get_engine().connect() as conn:
                 row = conn.execute(
@@ -443,7 +436,6 @@ def create_app():
         except Exception as e:
             return jsonify({"error": f"database error: {str(e)}"}), 503
 
-        # Don’t leak whether a doc exists for another user
         if not row:
             return jsonify({"error": "document not found"}), 404
 
@@ -453,26 +445,23 @@ def create_app():
         try:
             file_path.resolve().relative_to(app.config["STORAGE_DIR"].resolve())
         except Exception:
-            # Path looks suspicious or outside storage
             return jsonify({"error": "document path invalid"}), 500
 
         if not file_path.exists():
             return jsonify({"error": "file missing on disk"}), 410
 
-        # Serve inline with caching hints + ETag based on stored sha256
         resp = send_file(
             file_path,
             mimetype="application/pdf",
             as_attachment=False,
-            download_name=row.link if row.link.lower().endswith(".pdf") else f"{row.link}.pdf",
-            conditional=True,   # enables 304 if If-Modified-Since/Range handling
+            download_name=row.link if str(row.link).lower().endswith(".pdf") else f"{row.link}.pdf",
+            conditional=True,
             max_age=0,
             last_modified=file_path.stat().st_mtime,
         )
-
         resp.headers["Cache-Control"] = "private, max-age=0"
         return resp
-    
+
     # Helper: resolve path safely under STORAGE_DIR (handles absolute/relative)
     def _safe_resolve_under_storage(p: str, storage_root: Path) -> Path:
         storage_root = storage_root.resolve()
@@ -480,7 +469,6 @@ def create_app():
         if not fp.is_absolute():
             fp = storage_root / fp
         fp = fp.resolve()
-        # Python 3.12 has is_relative_to on Path
         if hasattr(fp, "is_relative_to"):
             if not fp.is_relative_to(storage_root):
                 raise RuntimeError(f"path {fp} escapes storage root {storage_root}")
@@ -493,34 +481,44 @@ def create_app():
 
     # DELETE /api/delete-document  (and variants)
     @app.route("/api/delete-document", methods=["DELETE", "POST"])  # POST supported for convenience
-    @app.route("/api/delete-document/<document_id>", methods=["DELETE"])
+    @app.route("/api/delete-document/<int:document_id>", methods=["DELETE"])  # force int in path
+    @require_auth
     def delete_document(document_id: int | None = None):
         # accept id from path, query (?id= / ?documentid=), or JSON body on POST
-        if not document_id:
-            document_id = (
+        if document_id is None:
+            raw = (
                 request.args.get("id")
                 or request.args.get("documentid")
                 or (request.is_json and (request.get_json(silent=True) or {}).get("id"))
             )
-        try:
-            doc_id = document_id
-        except (TypeError, ValueError):
-            return jsonify({"error": "document id required"}), 400
+        else:
+            raw = document_id
 
-        # Fetch the document (enforce ownership)
+        # validate & cast
+        try:
+            doc_id = int(raw)
+        except (TypeError, ValueError):
+            return jsonify({"error": "document_id (int) is required"}), 400
+
+        # parameterized SELECT (no string concatenation)
         try:
             with get_engine().connect() as conn:
-                query = "SELECT * FROM Documents WHERE id = " + doc_id
-                row = conn.execute(text(query)).first()
+                row = conn.execute(
+                    text("SELECT id, path, ownerid FROM Documents WHERE id = :id"),
+                    {"id": doc_id},
+                ).first()
         except Exception as e:
             return jsonify({"error": f"database error: {str(e)}"}), 503
 
         if not row:
-            # Don’t reveal others’ docs—just say not found
             return jsonify({"error": "document not found"}), 404
 
+        # optional: enforce ownership
+        if int(row.ownerid) != int(g.user["id"]):
+            return jsonify({"error": "not your document"}), 403
+
         # Resolve and delete file (best effort)
-        storage_root = Path(app.config["STORAGE_DIR"])
+        storage_root = Path(app.config["STORAGE_DIR"]).resolve()
         file_deleted = False
         file_missing = False
         delete_error = None
@@ -536,16 +534,12 @@ def create_app():
             else:
                 file_missing = True
         except RuntimeError as e:
-            # Path escapes storage root; refuse to touch the file
             delete_error = str(e)
             app.logger.error("Path safety check failed for doc id=%s: %s", row.id, e)
 
-        # Delete DB row (will cascade to Version if FK has ON DELETE CASCADE)
+        # parameterized DELETE
         try:
             with get_engine().begin() as conn:
-                # If your schema does NOT have ON DELETE CASCADE on Version.documentid,
-                # uncomment the next line first:
-                # conn.execute(text("DELETE FROM Version WHERE documentid = :id"), {"id": doc_id})
                 conn.execute(text("DELETE FROM Documents WHERE id = :id"), {"id": doc_id})
         except Exception as e:
             return jsonify({"error": f"database error during delete: {str(e)}"}), 503
@@ -557,8 +551,7 @@ def create_app():
             "file_missing": file_missing,
             "note": delete_error,   # null/omitted if everything was fine
         }), 200
-        
-        
+
     # POST /api/create-watermark or /api/create-watermark/<id>  → create watermarked pdf and returns metadata
     @app.post("/api/create-watermark")
     @app.post("/api/create-watermark/<int:document_id>")
@@ -575,9 +568,8 @@ def create_app():
             doc_id = document_id
         except (TypeError, ValueError):
             return jsonify({"error": "document id required"}), 400
-            
+
         payload = request.get_json(silent=True) or {}
-        # allow a couple of aliases for convenience
         method = payload.get("method")
         intended_for = payload.get("intended_for")
         position = payload.get("position") or None
@@ -704,14 +696,13 @@ def create_app():
             "filename": candidate,
             "size": len(wm_bytes),
         }), 201
-        
-        
+
     @app.post("/api/load-plugin")
     @require_auth
     def load_plugin():
         """
         Load a serialized Python class implementing WatermarkingMethod from
-        STORAGE_DIR/files/plugins/<filename>.{pkl|dill} and register it in wm_mod.METHODS.
+        STORAGE_DIR/files/plugins/<filename>.{pkl|dill} and register it.
         Body: { "filename": "MyMethod.pkl", "overwrite": false }
         """
         payload = request.get_json(silent=True) or {}
@@ -731,7 +722,7 @@ def create_app():
             return jsonify({"error": f"plugin path error: {e}"}), 500
 
         if not plugin_path.exists():
-            return jsonify({"error": f"plugin file not found: {safe}"}), 404
+            return jsonify({"error": f"plugin file not found: {filename}"}), 404
 
         # Unpickle the object (dill if available; else std pickle)
         try:
@@ -759,10 +750,10 @@ def create_app():
             is_ok = has_api
         if not is_ok:
             return jsonify({"error": "plugin does not implement WatermarkingMethod API (add_watermark/read_secret)"}), 400
-            
+
         # Register the class (not an instance) so you can instantiate as needed later
         WMUtils.METHODS[method_name] = cls()
-        
+
         return jsonify({
             "loaded": True,
             "filename": filename,
@@ -770,19 +761,15 @@ def create_app():
             "class_qualname": f"{getattr(cls, '__module__', '?')}.{getattr(cls, '__qualname__', cls.__name__)}",
             "methods_count": len(WMUtils.METHODS)
         }), 201
-        
-    
-    
-    # GET /api/get-watermarking-methods -> {"methods":[{"name":..., "description":...}, ...], "count":N}
+
+    # GET /api/get-watermarking-methods
     @app.get("/api/get-watermarking-methods")
     def get_watermarking_methods():
         methods = []
-
         for m in WMUtils.METHODS:
             methods.append({"name": m, "description": WMUtils.get_method(m).get_usage()})
-            
         return jsonify({"methods": methods, "count": len(methods)}), 200
-        
+
     # POST /api/read-watermark
     @app.post("/api/read-watermark")
     @app.post("/api/read-watermark/<int:document_id>")
@@ -799,9 +786,8 @@ def create_app():
             doc_id = document_id
         except (TypeError, ValueError):
             return jsonify({"error": "document id required"}), 400
-            
+
         payload = request.get_json(silent=True) or {}
-        # allow a couple of aliases for convenience
         method = payload.get("method")
         position = payload.get("position") or None
         key = payload.get("key")
@@ -814,21 +800,19 @@ def create_app():
         if not method or not isinstance(key, str):
             return jsonify({"error": "method, and key are required"}), 400
 
-        # lookup the document; FIXME enforce ownership, should be done now.
+        # lookup the document
         try:
             with get_engine().connect() as conn:
-                # original document row
                 row_doc = conn.execute(
                     text("""
                         SELECT id, name, path
                         FROM Documents
                         WHERE id = :id
                         LIMIT 1
-                    """), #LIMIT 1 to make sure nothing else gets returned
+                    """),
                     {"id": doc_id},
                 ).first()
 
-                # NEW: latest watermarked version for this document (if any)
                 row_ver = conn.execute(
                     text("""
                         SELECT path
@@ -860,9 +844,7 @@ def create_app():
             return jsonify({"error": "document path invalid"}), 500
         if not file_path.exists():
             return jsonify({"error": "file missing on disk"}), 410
-####
-        
-        secret = None
+
         try:
             secret = WMUtils.read_watermark(
                 method=method,
@@ -871,23 +853,16 @@ def create_app():
             )
         except Exception as e:
             return jsonify({"error": f"Error when attempting to read watermark: {e}"}), 400
+
         return jsonify({
             "documentid": doc_id,
             "secret": secret,
             "method": method,
             "position": position
         }), 201
-    
-    # --- your existing non-RMAP config/routes can be above here ---
 
     # ====================== RMAP: setup + endpoints ======================
-    # Env:
-    #   RMAP_KEYS_DIR (default: /app/server/keys)
-    #   RMAP_SERVER_PRIV_PASSPHRASE (optional)
-    #   RMAP_PDF_PATH (default: /app/storage/handout.pdf)
-    #   RMAP_LINK_TTL (default: 600)
 
-    # Small config for PDF + in-memory tokens
     app.config.setdefault("RMAP_PDF_PATH", os.environ.get("RMAP_PDF_PATH", "/app/storage/handout.pdf"))
     app.config.setdefault("RMAP_LINK_TTL", int(os.environ.get("RMAP_LINK_TTL", "600")))
     app.config.setdefault("RMAP_TOKENS", {})  # token -> expiry (epoch seconds)
@@ -987,6 +962,7 @@ def create_app():
             etag=False,
             last_modified=None,
         )
+
     # ====================== end RMAP section ======================
 
     return app
