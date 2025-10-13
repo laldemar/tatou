@@ -116,7 +116,7 @@ def test_fuzz_upload_document(session, base_url, auth, name, content):
     assert r.status_code in (201, 400, 415, 422)
 
 # list-documents
-@settings(max_examples=10)
+# @settings(max_examples=10)
 def test_list_documents(session, base_url, auth):
     endpoint = "list-documents"
     r = session.get(f"{base_url}/api/list-documents", headers=auth)
@@ -160,7 +160,7 @@ def test_fuzz_list_versions(session, base_url, auth, doc_id):
     assert r2.status_code in (200, 400, 404, 401)
 
 # list-all-versions
-@settings(max_examples=10)
+#@settings(max_examples=10)
 def test_list_all_versions(session, base_url, auth):
     endpoint = "list-all-versions"
     r = session.get(f"{base_url}/api/list-all-versions", headers=auth)
