@@ -37,10 +37,18 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-def log_event(event, user=None, status="INFO"):
-    """Helper for structured security logging"""
+def log_event(event, user=None, status="INFO", **extra):
+    """Helper for structured security logging."""
     ip = request.remote_addr if request else "N/A"
-    logger.info(f"event={event}, user={user}, ip={ip}, status={status}")
+    msg = f"event={event}, user={user}, ip={ip}, status={status}"
+    if extra:
+        try:
+            msg += f", details={extra}"
+        except Exception:
+            # be defensive—logging must never crash the handler
+            pass
+    logger.info(msg)
+
 
 
 def create_app():

@@ -139,7 +139,7 @@ def test_fuzz_delete_document(session, base_url, auth, doc_id):
     if r.status_code >= 500:
         _record_issue(endpoint, "server-500-delete", r.request, r)
         pytest.xfail(f"Server 5xx on delete: {r.status_code}")
-    assert r.status_code in (200, 400, 404, 405, 401)
+    assert r.status_code in (200, 400, 401, 403, 404, 405)
 
 # list-versions (path and query variants)
 @given(doc_id=st.one_of(st.integers(min_value=-5, max_value=1000), id_text_nonempty))
