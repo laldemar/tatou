@@ -224,3 +224,12 @@ server/flag
 # Security logs (not for version control)
 server/logs/*
 !server/logs/.gitkeep
+
+# Ignore Python caches and mutation testing artifacts
+__pycache__/
+.pytest_cache/
+.mutmut-cache/
+*.pyc
+*.py.meta
+mutation/
+mutants/
