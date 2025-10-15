@@ -24,6 +24,8 @@ services:
       - RMAP_SERVER_PRIV_PASSPHRASE=${RMAP_SERVER_PRIV_PASSPHRASE}
       - RMAP_PDF_PATH=/app/storage/handout.pdf
       - RMAP_LINK_TTL=600
+      - SECRET_KEY=${SECRET_KEY}              # Salt problem fix
+      - TATOU_SIGNING_SALT=${TATOU_SIGNING_SALT}  # Salt problem fix
     depends_on:
       db:
         condition: service_healthy

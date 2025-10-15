@@ -20,6 +20,9 @@ try:
 except Exception:  # dill is optional
     _pickle = _std_pickle
 
+from secrets import token_urlsafe
+
+
 import watermarking_utils as WMUtils
 from watermarking_method import WatermarkingMethod
 
@@ -55,7 +58,19 @@ def create_app():
     app = Flask(__name__)
 
     # --- Config ---
-    app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "fwqv9G1rA1QZjU8zJtC9dKpY6pJx3eFsKcZ4vR2y")
+    # app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "change") # Probably still unsafe. 
+
+    # In production: must come from env. In dev: generate ephemeral key if missing.
+    env_secret = os.environ.get("SECRET_KEY")
+    if env_secret:
+        app.config["SECRET_KEY"] = env_secret
+    else:
+        # Dev fallback only – ephemeral; all tokens invalid on restart.
+        app.config["SECRET_KEY"] = token_urlsafe(64)
+        app.logger.warning("SECRET_KEY missing; generated ephemeral key (development only).")
+    
+    app.config["SIGNING_SALT"] = os.environ.get("TATOU_SIGNING_SALT", "tatou-auth-v1")
+
     app.config["STORAGE_DIR"] = Path(os.environ.get("STORAGE_DIR", "./storage")).resolve()
     app.config["TOKEN_TTL_SECONDS"] = int(os.environ.get("TOKEN_TTL_SECONDS", "86400"))
 
@@ -89,8 +104,11 @@ def create_app():
         return eng
 
     # --- Helpers ---
+    #def _serializer():
+        #return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="tatou-auth") # Salt
+    
     def _serializer():
-        return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt="tatou-auth")
+        return URLSafeTimedSerializer(app.config["SECRET_KEY"], salt=app.config["SIGNING_SALT"])
 
     def _auth_error(msg: str, code: int = 401):
         return jsonify({"error": msg}), code
