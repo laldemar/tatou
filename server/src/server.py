@@ -118,15 +118,19 @@ def create_app():
         def wrapper(*args, **kwargs):
             auth = request.headers.get("Authorization", "")
             if not auth.startswith("Bearer "):
+                log_event("auth-missing-or-invalid-header", user="anonymous", status="FAIL")
                 return _auth_error("Missing or invalid Authorization header")
             token = auth.split(" ", 1)[1].strip()
             try:
                 data = _serializer().loads(token, max_age=app.config["TOKEN_TTL_SECONDS"])
             except SignatureExpired:
+                log_event("auth-token-expired", user="unknown", status="FAIL")
                 return _auth_error("Token expired")
             except BadSignature:
+                log_event("auth-token-invalid", user="unknown", status="FAIL")
                 return _auth_error("Invalid token")
             g.user = {"id": int(data["uid"]), "login": data["login"], "email": data.get("email")}
+            log_event("auth-success", user=g.user["email"], status="OK")
             return f(*args, **kwargs)
         return wrapper
 
@@ -395,6 +399,7 @@ def create_app():
             try:
                 document_id = int(document_id)
             except (TypeError, ValueError):
+                log_event("document-access-missing-or-bad-id", user=g.user["email"], status="FAIL")
                 return jsonify({"error": "document id required"}), 400
 
         try:
@@ -409,10 +414,12 @@ def create_app():
                     {"id": document_id, "uid": int(g.user["id"])},
                 ).first()
         except Exception as e:
+            log_event("document-access-db-error", user=g.user["email"], status="ERROR")
             return jsonify({"error": f"database error: {str(e)}"}), 503
 
         # Don’t leak whether a doc exists for another user
         if not row:
+            log_event("document-access-not-found", user=g.user["email"], status="FAIL")
             return jsonify({"error": "document not found"}), 404
 
         file_path = Path(row.path)
@@ -422,9 +429,11 @@ def create_app():
             file_path.resolve().relative_to(app.config["STORAGE_DIR"].resolve())
         except Exception:
             # Path looks suspicious or outside storage
+            log_event("document-access-invalid-path", user=g.user["email"], status="ERROR")
             return jsonify({"error": "document path invalid"}), 500
 
         if not file_path.exists():
+            log_event("document-access-missing-on-disk", user=g.user["email"], status="FAIL")
             return jsonify({"error": "file missing on disk"}), 410
 
         # Serve inline with caching hints + ETag based on stored sha256
@@ -442,6 +451,7 @@ def create_app():
             resp.set_etag(row.sha256_hex.lower())
 
         resp.headers["Cache-Control"] = "private, max-age=0, must-revalidate"
+        log_event("document-access-success", user=g.user["email"], status="OK")
         return resp
 
     # GET /api/get-version/<link>  → returns the watermarked PDF (inline)
@@ -926,6 +936,7 @@ def create_app():
         token = result_hex.lower()
         expires = int(time.time()) + app.config["RMAP_LINK_TTL"]
         app.config["RMAP_TOKENS"][token] = expires
+        log_event("rmap-link-minted", user="rmap", status="OK")
         return {
             "link": url_for("rmap_download", token=token, _external=True),
             "expires": expires,
@@ -936,15 +947,23 @@ def create_app():
     def rmap_initiate():
         rmap = app.config.get("RMAP")
         if rmap is None:
+            log_event("rmap-initiate-not-initialized", user="rmap", status="FAIL")
             return jsonify({"error": "RMAP not initialized"}), 503
         body = request.get_json(silent=True) or {}
         if "payload" not in body:
+            log_event("rmap-initiate-missing-payload", user="rmap", status="FAIL")
             return jsonify({"error": "payload is required"}), 400
         try:
             out = rmap.handle_message1(body)  # {"payload": "..."} or {"error": "..."}
-            return jsonify(out), (200 if "payload" in out else 400)
+            if "payload" in out:
+                log_event("rmap-initiate-success", user="rmap", status="OK")
+                return jsonify(out), 200
+            else:
+                log_event("rmap-initiate-failed", user="rmap", status="FAIL")
+                return jsonify(out), 400
         except Exception as e:
             app.logger.exception("rmap-initiate failed: %s", e)
+            log_event("rmap-initiate-exception", user="rmap", status="ERROR")
             return jsonify({"error": "server error"}), 500
 
     # Message 2 -> one-time link
@@ -952,17 +971,22 @@ def create_app():
     def rmap_get_link():
         rmap = app.config.get("RMAP")
         if rmap is None:
+            log_event("rmap-get-link-not-initialized", user="rmap", status="FAIL")
             return jsonify({"error": "RMAP not initialized"}), 503
         body = request.get_json(silent=True) or {}
         if "payload" not in body:
+            log_event("rmap-get-link-missing-payload", user="rmap", status="FAIL")
             return jsonify({"error": "payload is required"}), 400
         try:
             out = rmap.handle_message2(body)  # {"result": "<32-hex>"} or {"error": "..."}
             if "result" not in out:
+                log_event("rmap-get-link-failed", user="rmap", status="FAIL")
                 return jsonify(out), 400
+            log_event("rmap-get-link-success", user="rmap", status="OK")
             return jsonify(_rmap_make_link(out["result"])), 200
         except Exception as e:
             app.logger.exception("rmap-get-link failed: %s", e)
+            log_event("rmap-get-link-exception", user="rmap", status="ERROR")
             return jsonify({"error": "server error"}), 500
 
     # One-time download endpoint
@@ -970,14 +994,20 @@ def create_app():
     def rmap_download(token: str):
         tokens = app.config.get("RMAP_TOKENS", {})
         expires = tokens.pop(token, None)  # one-time use
-        if not expires or time.time() > expires:
+        if not expires:
+            log_event("rmap-download-invalid-token", user="rmap", status="FAIL")
+            abort(404)
+
+        if time.time() > expires:
+            log_event("rmap-download-expired-token", user="rmap", status="FAIL")
             abort(404)
 
         pdf_path = Path(app.config["RMAP_PDF_PATH"])
         if not pdf_path.exists():
             app.logger.error("RMAP_PDF_PATH missing: %s", pdf_path)
+            log_event("rmap-download-missing-pdf", user="rmap", status="ERROR")
             abort(500)
-
+        log_event("rmap-download-success", user="rmap", status="OK")
         return send_file(
             str(pdf_path),
             mimetype="application/pdf",
