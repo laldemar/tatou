@@ -10,9 +10,15 @@ except ModuleNotFoundError:
     sys.path.insert(0, str(Path(__file__).resolve().parent / "server" / "src"))
     from rmap.identity_manager import IdentityManager  # type: ignore
 
-ROOT = Path(__file__).resolve().parent
-KEYS = ROOT / "server" / "keys"
-CLIENTS = KEYS / "clients"
+ROOT_DIR = Path(__file__).resolve().parent
+if (ROOT_DIR / "keys" / "clients").is_dir():
+    # script is inside tatou/server/
+    ROOT = ROOT_DIR.parent           # .../tatou
+    KEYS = ROOT_DIR / "keys"         # .../tatou/server/keys
+else:
+    # script is in project root tatou/
+    ROOT = ROOT_DIR                  # .../tatou
+    KEYS = ROOT / "server" / "keys"  # .../tatou/server/keys
 
 def load_priv(identity: str) -> PGPKey:
     priv = CLIENTS / f"{identity}_private.asc"
