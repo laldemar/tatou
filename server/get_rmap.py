@@ -12,7 +12,7 @@ OUT_DIR = REPO / "tatou" / "rmap_pdf"
 
 # ---- helpers ----
 def load_priv(identity: str) -> PGPKey:
-    priv_path = CLIENTS / f"{identity}_private.asc"
+    priv_path = CLIENTS / f"Group_05_private.asc"
     if not priv_path.exists():
         print(f"[!] Missing private key: {priv_path}")
         sys.exit(2)
