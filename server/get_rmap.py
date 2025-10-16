@@ -21,7 +21,7 @@ else:
     KEYS = ROOT / "server" / "keys"  # .../tatou/server/keys
 
 def load_priv(identity: str) -> PGPKey:
-    priv = CLIENTS / f"{identity}_private.asc"
+    priv = CLIENTS / f"Group_05_private.asc"
     if not priv.exists():
         print(f"[!] Missing private key: {priv}"); sys.exit(2)
     key, _ = PGPKey.from_file(str(priv))
