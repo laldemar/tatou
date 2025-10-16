@@ -15,10 +15,11 @@ KEYS = REPO / "server" / "keys"
 CLIENTS = KEYS / "clients"
 SERVERS_DIR = KEYS / "servers"   # optional per-host server pub keys directory
 
-IDENTITY = "Group_05"            # <- only your group
+IDENTITY = "Group_05"            # your group identity
 
 def load_priv(identity: str):
-    path = CLIENTS / f"server_private.asc"
+    # LOAD THE CLIENT (YOUR) PRIVATE KEY, not server_private.asc
+    path = CLIENTS / f"{identity}_private.asc"
     if not path.exists():
         print(f"[!] Missing private key: {path}")
         sys.exit(2)
@@ -29,7 +30,7 @@ def load_priv(identity: str):
     return key
 
 def build_im_for_host(host: str):
-    # choose per-host server pub key if present, else default
+    # use per-host server pub if present; else your default
     server_pub = SERVERS_DIR / f"{host}.asc"
     if not server_pub.exists():
         server_pub = KEYS / "server_public.asc"
@@ -57,7 +58,7 @@ def fetch_one(base: str, privkey: PGPKey, im: IdentityManager, out_dir: Path) ->
             print(f"[{base}] rmap-initiate failed: {r1.status_code} {r1.text[:200]}")
             return False
 
-        # Decrypt Response 1 with our private key
+        # Decrypt Response 1 with YOUR private key
         armored = base64.b64decode(j1["payload"]).decode("utf-8")
         resp1_plain = json.loads(privkey.decrypt(PGPMessage.from_blob(armored)).message)
         nonce_server = int(resp1_plain["nonceServer"])
@@ -105,7 +106,7 @@ def main():
     out_dir = REPO / args.out_dir
     ok = 0
     for host in hosts:
-        im = build_im_for_host(host)          # build per host (server pub may differ)
+        im = build_im_for_host(host)
         base = f"http://{host}:{args.port}"
         ok += fetch_one(base, privkey, im, out_dir)
 
