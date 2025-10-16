@@ -4,15 +4,24 @@ from pathlib import Path
 import requests
 from pgpy import PGPKey, PGPMessage
 
-# --- repo layout ---
-REPO = Path(__file__).resolve().parent
-KEYS = REPO / "server" / "keys"
+# ---- where am I? adjust paths for being inside tatou/server/ ----
+HERE = Path(__file__).resolve().parent  # .../tatou/server
+if (HERE / "keys" / "clients").is_dir():
+    # script is inside server/
+    KEYS = HERE / "keys"                    # .../tatou/server/keys
+    PROJECT_ROOT = HERE.parent              # .../tatou
+else:
+    # script is at project root
+    PROJECT_ROOT = HERE                     # .../tatou
+    KEYS = PROJECT_ROOT / "server" / "keys" # .../tatou/server/keys
+
 CLIENTS = KEYS / "clients"
-OUT_DIR = REPO / "tatou" / "rmap_pdf"
+OUT_DIR = PROJECT_ROOT / "rmap_pdf"         # save to tatou/rmap_pdf
 
 # ---- helpers ----
-def load_priv(identity: str) -> PGPKey:
-    priv_path = CLIENTS / f"Group_05_private.asc"
+def load_priv() -> PGPKey:
+    # you said your private key is exactly this filename
+    priv_path = CLIENTS / "Group_05_private.asc"
     if not priv_path.exists():
         print(f"[!] Missing private key: {priv_path}")
         sys.exit(2)
@@ -26,7 +35,7 @@ def build_identity_manager():
     try:
         from rmap.identity_manager import IdentityManager
     except ModuleNotFoundError:
-        sys.path.insert(0, str(REPO / "server" / "src"))
+        sys.path.insert(0, str(PROJECT_ROOT / "server" / "src"))
         from rmap.identity_manager import IdentityManager  # type: ignore
 
     server_pub = KEYS / "server_public.asc"
@@ -44,12 +53,10 @@ def build_identity_manager():
     )
 
 def try_message1(base_url: str, im, privkey: PGPKey, identity: str):
-    """Try /rmap-initiate and /rmap/initiate; return (ep_init, ep_link, resp1_plain) or (None, None, None)."""
     candidates = [
         ("rmap-initiate", "rmap-get-link"),
         ("rmap/initiate", "rmap/get-link"),
     ]
-
     nonce_client = int(time.time() * 1_000_000) & 0xFFFFFFFF
     msg1_plain = {"nonceClient": nonce_client, "identity": identity}
     payload = im.encrypt_for_server(msg1_plain)
@@ -68,23 +75,19 @@ def try_message1(base_url: str, im, privkey: PGPKey, identity: str):
             if "payload" not in j:
                 print(f"[{base_url}] {ep_init} missing 'payload'")
                 continue
-
             armored = base64.b64decode(j["payload"]).decode("utf-8")
             resp1_plain = json.loads(privkey.decrypt(PGPMessage.from_blob(armored)).message)
             return ep_init, ep_link, resp1_plain
-        except requests.Timeout:
-            print(f"[{base_url}] {ep_init} timeout")
         except Exception as e:
             print(f"[{base_url}] {ep_init} error: {e}")
     return None, None, None
 
 def save_pdf(resp, host_ip: str) -> Path:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    fname = None
     cd = resp.headers.get("content-disposition", "")
     if "filename=" in cd:
         fname = cd.split("filename=",1)[1].strip().strip('"').strip("'")
-    if not fname:
+    else:
         fname = f"{host_ip}.pdf"
     dst = OUT_DIR / fname
     dst.write_bytes(resp.content)
@@ -93,17 +96,20 @@ def save_pdf(resp, host_ip: str) -> Path:
 def main():
     parser = argparse.ArgumentParser(description="Fetch one group's PDF over RMAP (simple).")
     parser.add_argument("host", help="target host IP, e.g. 10.11.202.6")
-    parser.add_argument("--port", type=int, default=5000, help="port (default 5000)")
-    parser.add_argument("--identity", default="Group_05",
-                        help="YOUR group identity (must match your private key filename)")
+    parser.add_argument("--port", type=int, default=5000)
+    # your identity is fixed to Group_05, that’s what their server needs to look up
     args = parser.parse_args()
 
-    privkey = load_priv(args.identity)
+    identity = "Group_05"
+    privkey = load_priv()
     im = build_identity_manager()
 
     base = f"http://{args.host}:{args.port}"
+    print(f"[i] KEYS={KEYS}")
+    print(f"[i] OUT_DIR={OUT_DIR}")
+    print(f"[i] base={base} identity={identity}")
 
-    ep_init, ep_link, resp1_plain = try_message1(base, im, privkey, args.identity)
+    ep_init, ep_link, resp1_plain = try_message1(base, im, privkey, identity)
     if not ep_init:
         print(f"[!] No working initiate endpoint at {base} (tried /rmap-initiate and /rmap/initiate).")
         sys.exit(1)
