@@ -2,17 +2,12 @@
 """
 Tiny RMAP client for the SOFTSEC project.
 
-Usage example (against your own server):
+Usage example:
+    export CLIENT_PASSPHRASE='your-private-key-passphrase'   # or omit to be prompted
     python server/get_rmap.py 127.0.0.1 --port 5000 \
       --identity Group_05 \
       --server-pub server/keys/server_public.asc \
       --outdir rmap_pdf
-
-Notes:
-- --identity MUST match the filename stem in keys/clients/<identity>.asc (case sensitive).
-- Your private key must be keys/clients/<identity>_private.asc
-- If your private key is passphrase-protected, set:
-    export CLIENT_PASSPHRASE='your-passphrase'
 """
 
 import os
@@ -22,6 +17,7 @@ import base64
 import argparse
 import time
 from pathlib import Path
+from getpass import getpass
 
 import requests
 from pgpy import PGPKey, PGPMessage
@@ -50,21 +46,19 @@ CLIENTS = KEYS / "clients"
 
 # --- Helpers -----------------------------------------------------------------
 
-def load_priv(identity: str) -> PGPKey:
-    """Load (and unlock) the private key for the given identity."""
+def load_priv(identity: str) -> tuple[PGPKey, str | None]:
+    """Load the private key for the given identity and (optionally) get the passphrase."""
     priv = CLIENTS / f"{identity}_private.asc"
     if not priv.exists():
         print(f"[!] Missing private key: {priv}")
         sys.exit(2)
 
     key, _ = PGPKey.from_file(str(priv))
-    pw = os.environ.get("CLIENT_PASSPHRASE")
+    pw = None
     if key.is_protected:
-        if not pw:
-            print("[!] Key is protected; set CLIENT_PASSPHRASE")
-            sys.exit(2)
-        key.unlock(pw)
-    return key
+        pw = os.environ.get("CLIENT_PASSPHRASE") or getpass(f"Passphrase for {priv.name}: ")
+        # Do NOT unlock here permanently; use context manager at decrypt time
+    return key, pw
 
 
 def build_im(server_pub: Path) -> IdentityManager:
@@ -85,11 +79,9 @@ def _pgpmessage_from_b64(b64_payload: str) -> PGPMessage:
     """Accepts base64 of either BINARY or ASCII-armored PGP; returns PGPMessage."""
     raw = base64.b64decode(b64_payload)
     try:
-        # works if payload is binary PGP
-        return PGPMessage.from_blob(raw)
+        return PGPMessage.from_blob(raw)               # binary payload
     except Exception:
-        # if it was ASCII-armored, decode to str and try again
-        return PGPMessage.from_blob(raw.decode("utf-8"))
+        return PGPMessage.from_blob(raw.decode("utf-8"))  # ASCII-armored
 
 
 # --- Main --------------------------------------------------------------------
@@ -100,11 +92,11 @@ def main():
     ap.add_argument("--port", type=int, default=5000)
     ap.add_argument("--identity", default="Group_05")
     ap.add_argument("--server-pub", required=True, help="path to TARGET server public key (.asc)")
-    ap.add_argument("--outdir", default=str(ROOT / "rmap_pdf"))
+    ap.add_argument("--outdir", default=str((ROOT / "rmap_pdf")))
     args = ap.parse_args()
 
     # Keys + crypto manager
-    priv = load_priv(args.identity)
+    priv, priv_pw = load_priv(args.identity)
     im = build_im(Path(args.server_pub))
 
     base = f"http://{args.server}:{args.port}"
@@ -131,7 +123,12 @@ def main():
 
     try:
         pgp_msg = _pgpmessage_from_b64(r1.json()["payload"])
-        resp1_plain = json.loads(priv.decrypt(pgp_msg).message)
+        # Proper unlock scope for PGPy
+        if priv.is_protected:
+            with priv.unlock(priv_pw):
+                resp1_plain = json.loads(priv.decrypt(pgp_msg).message)
+        else:
+            resp1_plain = json.loads(priv.decrypt(pgp_msg).message)
         nonce_server = int(resp1_plain["nonceServer"])
     except Exception as e:
         print("[!] Failed to decrypt/parse Response 1:", e)
