@@ -1,6 +1,11 @@
 # tatou
 A web platform for pdf watermarking. This project is intended for pedagogical use, and contain security vulnerabilities. Do not deploy on an open network.
 
+### Report
+All project artifacts are stored in a shared Google Drive folder for accessibility and verification purposes.
+
+The folder is organised per group member and contains logs, test results, and supporting files that demonstrate each specialisation’s outputs.
+
 ## Instructions
 
 The following instructions are meant for a bash terminal on a Linux machine. If you are using something else, you will need to adapt them.
