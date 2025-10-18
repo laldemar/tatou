@@ -13,6 +13,26 @@ git clone https://github.com/nharrand/tatou.git
 
 Note that you should probably fork the repo and clone your own repo.
 
+### Fuzzing
+## Run
+1) Start Tatou in the VM (docker compose up -d).
+2) In the VM:  pip install -r fuzz/requirements.txt
+3) Run:        TATOU_BASE_URL=http://localhost:5000 pytest fuzz -q
+   (or change BASE_URL if you expose the port to host)
+
+- Uses Hypothesis to generate HTTP payloads.
+- Any 5xx or crash/hang is a bug.
+- Keep any failing minimized inputs as regression tests in server/src/test/.
+- pip install -r fuzz/requirements.txt
+- TATOU_BASE_URL=http://localhost:5000 pytest fuzz -q
+
+# rmap
+export CLIENT_PASSPHRASE='your-Group_05-private-key-pass'
+
+python server/get_rmap.py 10.11.202.x --port 5000 \
+  --identity Group_x \
+  --server-pub server/keys/clients/Group_x.asc \
+  --outdir rmap_pdf
 
 ### Run python unit tests
 
