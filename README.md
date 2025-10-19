@@ -79,5 +79,9 @@ http -v :5000/healthz
 # Open your browser at 127.0.0.1:5000 to check if the website is up.
 ```
 
-
+## Mutation Testing Summary
+Mutation testing was executed successfully in an isolated environment (mini-mut).  
+All four generated mutants were killed by the tests, confirming the test setup works.  
+In the main project, MutMut could not collect stats due to complex path dependencies.  
+See `mutmut_isolated_results.pdf` and `pytest_roundtrip_output.pdf` for details.
 
