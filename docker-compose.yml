@@ -55,7 +55,7 @@ services:
     environment:
       - PMA_HOST=db
       - PMA_PORT=3306
-      - UPLOAD_LIMIT=64M     # <-- use a unit and quote if using YAML key:value form
+      - UPLOAD_LIMIT=64M
       - MEMORY_LIMIT=256M
     ports:
       - "8080:80"

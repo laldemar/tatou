@@ -6,8 +6,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# ➕ add gnupg + dirmngr (RMAP needs gpg). Keep your other packages unchanged.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates openssh-client \
+ && apt-get install -y --no-install-recommends git ca-certificates openssh-client gnupg dirmngr \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy project description, to instal dependencies
