@@ -1,4 +1,4 @@
-# Server image: minimal Flask + Gunicorn
+# Server image: Flask + RMAP (needs gpg)
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -6,23 +6,23 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# --- OS deps: RMAP shells out to gpg ---
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates openssh-client \
+ && apt-get install -y --no-install-recommends \
+      gnupg dirmngr ca-certificates git openssh-client tzdata \
  && rm -rf /var/lib/apt/lists/*
 
-# Copy project description, to instal dependencies
-COPY pyproject.toml /app/pyproject.toml
+# --- Python deps ---
+# Prefer requirements.txt (simpler + stable)
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Install runtime dependencies
-RUN pip install --no-cache-dir -e .
+# --- App sources (everything under server/) ---
+# This will copy: server.py, entrypoint.sh, keys/, logs/, etc.
+COPY . /app
 
-# Copy sources after dependencies installation
-COPY src /app/src
-COPY flag /app/flag
-COPY entrypoint.sh /app/entrypoint.sh
-RUN pip install --no-cache-dir -e .
+# Make sure entrypoint is executable
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 5000
-
-# Default command runs the web server
 CMD ["./entrypoint.sh"]
