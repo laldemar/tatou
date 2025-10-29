@@ -4,7 +4,7 @@ A web platform for pdf watermarking. This project is intended for pedagogical us
 ### Report
 All project artifacts are stored in a shared Google Drive folder for accessibility and verification purposes.
 
-The folder is organised per group member and contains logs, test results, and supporting files that demonstrate each specialisation’s outputs.
+The folder is organised per group member and contains logs, test results, and supporting files that demonstrate each specialisation’s outputs
 
 ## Instructions
 
@@ -17,6 +17,29 @@ git clone https://github.com/nharrand/tatou.git
 ```
 
 Note that you should probably fork the repo and clone your own repo.
+
+
+### RMAP
+TO be able to run rmap and get other groups pds you need to first activate the virutal environment:
+
+. .venv/bin/activate 
+
+This needs to be done when you are in ~/Desktop/tatou/
+
+From there you run:
+
+python -m rmap.rmap_client \
+  --server 10.11.202.x \
+  --identity Group_05 \
+  --client-priv server/Group_05_passwordless_private.asc \
+  --server-pub server/keys/clients/Group_x.asc \
+  --outdir rmap_pdf
+
+TO test rmap with a test user (Alice) you run:
+
+. .venv/bin/activate
+
+
 
 ### Fuzzing
 ## Run

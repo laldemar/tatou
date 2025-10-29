@@ -17,8 +17,9 @@ BASE = os.environ.get("BASE", "http://localhost:5000")
 IDENTITY = os.environ.get("IDENTITY", "Alice")
 ALICE_PASSPHRASE = os.environ.get("ALICE_PASSPHRASE")  # only if Alice key is protected
 
-repo = Path(__file__).resolve().parent
-keys_dir = repo / "server" / "keys"
+# point to the /server directory (one level above /server/test)
+repo = Path(__file__).resolve().parents[1]        # .../server
+keys_dir   = repo / "keys"
 clients_dir = keys_dir / "clients"
 server_pub  = keys_dir / "server_public.asc"
 server_priv = keys_dir / "server_private.asc"
