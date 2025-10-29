@@ -38,14 +38,12 @@ python -m rmap.rmap_client \
 TO test rmap with a test user (Alice) you run:
 
 . .venv/bin/activate
-
-
-
 ### Fuzzing
 ## Run
 1) Start Tatou in the VM (docker compose up -d).
-2) In the VM:  pip install -r fuzz/requirements.txt
-3) Run:        TATOU_BASE_URL=http://localhost:5000 pytest fuzz -q
+2) . .venv/bin/activate - from ~/Desktop/tatou
+3) pip install -r fuzz/requirements.txt
+4) Run:        TATOU_BASE_URL=http://localhost:5000 pytest server/fuzz -q
    (or change BASE_URL if you expose the port to host)
 
 - Uses Hypothesis to generate HTTP payloads.
