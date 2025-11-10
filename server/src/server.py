@@ -969,7 +969,7 @@ def create_app():
 
     # Message 2 -> one-time link
     @app.post("/rmap-get-link")
-    @app.post("/api/rmap-initiate")
+    @app.post("/api/rmap-get-link")
     def rmap_get_link():
         rmap = app.config.get("RMAP")
         if rmap is None:
