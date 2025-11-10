@@ -35,6 +35,14 @@ python -m rmap.rmap_client \
   --server-pub server/keys/clients/Group_x.asc \
   --outdir rmap_pdf
 
+
+Test locally:
+rmap-client --server 127.0.0.1  \
+--identity Group_05  \
+--client-priv server/Group_05_passwordless_private.asc \
+--server-pub server/keys/server_public.asc
+--outdir rmap_pdf
+
 TO test rmap with a test user (Alice) you run:
 
 . .venv/bin/activate

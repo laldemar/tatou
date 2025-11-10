@@ -33,6 +33,11 @@ from rmap.rmap import RMAP
 import logging
 
 # --- Security Logger Setup ---
+
+# Log file path: can be overridden in env; defaults to ./logs/security.log
+LOG_PATH = Path(os.environ.get("TATOU_SECURITY_LOG", "logs/security.log")).resolve()
+LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
 logger = logging.getLogger("tatou-security")
 handler = logging.FileHandler("/app/logs/security.log")
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
