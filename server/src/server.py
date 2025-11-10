@@ -33,29 +33,27 @@ from rmap.rmap import RMAP
 import logging
 
 # --- Security Logger Setup ---
-
-# Log file path: can be overridden in env; defaults to ./logs/security.log
-LOG_PATH = Path(os.environ.get("TATOU_SECURITY_LOG", "logs/security.log")).resolve()
-LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-
+import os
+from pathlib import Path
 logger = logging.getLogger("tatou-security")
-handler = logging.FileHandler("/app/logs/security.log")
+
+# Default: /app/logs in Docker, but allow override + create dir in tests/VM
+default_dir = "/app/logs"
+log_dir = Path(os.environ.get("TATOU_LOG_DIR", default_dir))
+
+try:
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "security.log"
+    handler = logging.FileHandler(log_file)
+except Exception:
+    # If we cannot write to disk (e.g. weird test env), just use a null handler
+    handler = logging.NullHandler()
+
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-def log_event(event, user=None, status="INFO", **extra):
-    """Helper for structured security logging."""
-    ip = request.remote_addr if request else "N/A"
-    msg = f"event={event}, user={user}, ip={ip}, status={status}"
-    if extra:
-        try:
-            msg += f", details={extra}"
-        except Exception:
-            # be defensive—logging must never crash the handler
-            pass
-    logger.info(msg)
 
 
 
