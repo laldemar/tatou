@@ -1,13 +1,18 @@
-# pytest plockar automatiskt upp fixtures i conftest.py
+import sys
+from pathlib import Path
 import pytest
-import fitz  # PyMuPDF
 
-@pytest.fixture
-def sample_pdf_bytes():
-    """Skapa en minimal 1-sides PDF i minnet och returnera bytes."""
+repo_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(repo_root / "server" / "src"))
+sys.path.insert(0, str(repo_root))
+
+@pytest.fixture(scope="session")
+def sample_pdf_path(tmp_path_factory) -> Path:
+    import fitz
+    p = tmp_path_factory.mktemp("pdfs") / "sample.pdf"
     doc = fitz.open()
     page = doc.new_page()
-    page.insert_text((72, 72), "Hello Tatou!")
-    data = doc.tobytes()
+    page.insert_text((72, 72), "Watermark test")
+    doc.save(p)
     doc.close()
-    return data
+    return p
