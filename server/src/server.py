@@ -944,6 +944,7 @@ def create_app():
 
     # Message 1 -> Response 1
     @app.post("/rmap-initiate")
+    @app.post("/api/rmap-initiate")
     def rmap_initiate():
         rmap = app.config.get("RMAP")
         if rmap is None:
@@ -968,6 +969,7 @@ def create_app():
 
     # Message 2 -> one-time link
     @app.post("/rmap-get-link")
+    @app.post("/api/rmap-initiate")
     def rmap_get_link():
         rmap = app.config.get("RMAP")
         if rmap is None:
