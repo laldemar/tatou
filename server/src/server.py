@@ -980,16 +980,14 @@ def create_app():
             app.logger.exception("Failed to initialize RMAP: %s", e)
             app.config["RMAP"] = None
 
-    # Helper: mint a one-time, time-limited download link from RMAP result
-    def _rmap_make_link(result_hex: str) -> dict:
+        # Helper: store a one-time, time-limited RMAP token and return it
+    def _rmap_store_token(result_hex: str) -> str:
         token = result_hex.lower()
         expires = int(time.time()) + app.config["RMAP_LINK_TTL"]
         app.config["RMAP_TOKENS"][token] = expires
         log_event("rmap-link-minted", user="rmap", status="OK")
-        return {
-            "link": url_for("rmap_download", token=token, _external=True),
-            "expires": expires,
-        }
+        return token
+
 
     # Message 1 -> Response 1
     @app.post("/rmap-initiate")
@@ -1033,12 +1031,17 @@ def create_app():
             if "result" not in out:
                 log_event("rmap-get-link-failed", user="rmap", status="FAIL")
                 return jsonify(out), 400
+
+            # Store the token + expiry, and return it under the key "result"
+            token = _rmap_store_token(out["result"])
             log_event("rmap-get-link-success", user="rmap", status="OK")
-            return jsonify(_rmap_make_link(out["result"])), 200
+            return jsonify({"result": token}), 200
+
         except Exception as e:
             app.logger.exception("rmap-get-link failed: %s", e)
             log_event("rmap-get-link-exception", user="rmap", status="ERROR")
             return jsonify({"error": "server error"}), 500
+
 
     # One-time download endpoint
     @app.get("/rmap-download/<token>")
