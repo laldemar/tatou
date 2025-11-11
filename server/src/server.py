@@ -55,6 +55,19 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 
+def log_event(event: str, user: str | None = None, status: str | None = None, **extra) -> None:
+    """
+    Write a security event line to the tatou-security log.
+    """
+    parts = [f"event={event}"]
+    if user is not None:
+        parts.append(f"user={user}")
+    if status is not None:
+        parts.append(f"status={status}")
+    for key, value in extra.items():
+        parts.append(f"{key}={value}")
+    logger.info(" ".join(parts))
+
 
 
 def create_app():
