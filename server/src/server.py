@@ -54,7 +54,7 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-
+#OBS DO NOT TOUCH AT ALLL!!!!! RMAP STUFF WILL BREAK!!!!!!!!
 def log_event(event: str, user: str | None = None, status: str | None = None, **extra) -> None:
     """
     Write a security event line to the tatou-security log.
@@ -67,6 +67,7 @@ def log_event(event: str, user: str | None = None, status: str | None = None, **
     for key, value in extra.items():
         parts.append(f"{key}={value}")
     logger.info(" ".join(parts))
+#OBS DO NOT TOUCH AT ALL!!!! RMAP STUFF WILL BREAK!!!!!!!!
 
 
 
