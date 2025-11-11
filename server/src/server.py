@@ -913,16 +913,12 @@ def create_app():
             "method": method,
             "position": position
         }), 201
-    
-
-    
 
     # ====================== RMAP: setup + endpoints ======================
 
     app.config.setdefault("RMAP_PDF_PATH", os.environ.get("RMAP_PDF_PATH", "/app/storage/handout.pdf"))
     app.config.setdefault("RMAP_LINK_TTL", int(os.environ.get("RMAP_LINK_TTL", "600")))
-    # Stores RMAP result tokens -> expiry (epoch seconds)
-    app.config.setdefault("RMAP_TOKENS", {})
+    app.config.setdefault("RMAP_TOKENS", {})  # token -> expiry (epoch seconds)
 
     # Key paths
     SERVER_DIR = Path(__file__).resolve().parents[1]   # /app/server
@@ -952,12 +948,16 @@ def create_app():
             app.logger.exception("Failed to initialize RMAP: %s", e)
             app.config["RMAP"] = None
 
-    # Helper: remember a one-time, time-limited result token for /api/get-version/<result>
-    def _rmap_register_result(result_hex: str) -> None:
+    # Helper: mint a one-time, time-limited download link from RMAP result
+    def _rmap_make_link(result_hex: str) -> dict:
         token = result_hex.lower()
         expires = int(time.time()) + app.config["RMAP_LINK_TTL"]
         app.config["RMAP_TOKENS"][token] = expires
         log_event("rmap-link-minted", user="rmap", status="OK")
+        return {
+            "link": url_for("rmap_download", token=token, _external=True),
+            "expires": expires,
+        }
 
     # Message 1 -> Response 1
     @app.post("/rmap-initiate")
@@ -967,12 +967,10 @@ def create_app():
         if rmap is None:
             log_event("rmap-initiate-not-initialized", user="rmap", status="FAIL")
             return jsonify({"error": "RMAP not initialized"}), 503
-
         body = request.get_json(silent=True) or {}
         if "payload" not in body:
             log_event("rmap-initiate-missing-payload", user="rmap", status="FAIL")
             return jsonify({"error": "payload is required"}), 400
-
         try:
             out = rmap.handle_message1(body)  # {"payload": "..."} or {"error": "..."}
             if "payload" in out:
@@ -986,7 +984,7 @@ def create_app():
             log_event("rmap-initiate-exception", user="rmap", status="ERROR")
             return jsonify({"error": "server error"}), 500
 
-    # Message 2 -> returns {"result": "<32-hex>"} as per RMAP spec
+    # Message 2 -> one-time link
     @app.post("/rmap-get-link")
     @app.post("/api/rmap-get-link")
     def rmap_get_link():
@@ -994,38 +992,31 @@ def create_app():
         if rmap is None:
             log_event("rmap-get-link-not-initialized", user="rmap", status="FAIL")
             return jsonify({"error": "RMAP not initialized"}), 503
-
         body = request.get_json(silent=True) or {}
         if "payload" not in body:
             log_event("rmap-get-link-missing-payload", user="rmap", status="FAIL")
             return jsonify({"error": "payload is required"}), 400
-
         try:
             out = rmap.handle_message2(body)  # {"result": "<32-hex>"} or {"error": "..."}
             if "result" not in out:
                 log_event("rmap-get-link-failed", user="rmap", status="FAIL")
                 return jsonify(out), 400
-
-            # Remember this result so /api/get-version/<result> can serve the PDF
-            _rmap_register_result(out["result"])
-
             log_event("rmap-get-link-success", user="rmap", status="OK")
-            # IMPORTANT: return exactly {"result": "..."} to follow the spec
-            return jsonify(out), 200
+            return jsonify(_rmap_make_link(out["result"])), 200
         except Exception as e:
             app.logger.exception("rmap-get-link failed: %s", e)
             log_event("rmap-get-link-exception", user="rmap", status="ERROR")
             return jsonify({"error": "server error"}), 500
 
-    # ====================== end RMAP section ======================
+    # One-time download endpoint
+    @app.get("/rmap-download/<token>")
+    def rmap_download(token: str):
+        tokens = app.config.get("RMAP_TOKENS", {})
+        expires = tokens.pop(token, None)  # one-time use
+        if not expires:
+            log_event("rmap-download-invalid-token", user="rmap", status="FAIL")
+            abort(404)
 
-        # --- RMAP special case: treat <token> as an RMAP result if it was minted by rmap_get_link ---
-    token = token_or_link.lower()  # adjust name if your parameter is called differently
-    tokens = app.config.get("RMAP_TOKENS", {})
-    expires = tokens.pop(token, None)  # one-time use
-
-    if expires is not None:
-        # This was an RMAP token
         if time.time() > expires:
             log_event("rmap-download-expired-token", user="rmap", status="FAIL")
             abort(404)
@@ -1035,7 +1026,6 @@ def create_app():
             app.logger.error("RMAP_PDF_PATH missing: %s", pdf_path)
             log_event("rmap-download-missing-pdf", user="rmap", status="ERROR")
             abort(500)
-
         log_event("rmap-download-success", user="rmap", status="OK")
         return send_file(
             str(pdf_path),
@@ -1048,9 +1038,7 @@ def create_app():
             last_modified=None,
         )
 
-    # --- end of RMAP special case; below this keep your existing get-version logic ---
-
-
+    # ====================== end RMAP section ======================
 
 
     return app
