@@ -960,15 +960,25 @@ def create_app():
         try:
             out = rmap.handle_message1(body)  # {"payload": "..."} or {"error": "..."}
             if "payload" in out:
-                log_event("rmap-initiate-success", user="rmap", status="OK")
+                try:
+                    log_event("rmap-initiate-success", user="rmap", status="OK")
+                except NameError:
+                    app.logger.info("rmap-initiate-success user=rmap status=OK")
                 return jsonify(out), 200
             else:
-                log_event("rmap-initiate-failed", user="rmap", status="FAIL")
+                try:
+                    log_event("rmap-initiate-failed", user="rmap", status="FAIL")
+                except NameError:
+                    app.logger.warning("rmap-initiate-failed user=rmap status=FAIL")
                 return jsonify(out), 400
         except Exception as e:
             app.logger.exception("rmap-initiate failed: %s", e)
-            log_event("rmap-initiate-exception", user="rmap", status="ERROR")
+            try:
+                log_event("rmap-initiate-exception", user="rmap", status="ERROR")
+            except NameError:
+                app.logger.error("rmap-initiate-exception user=rmap status=ERROR")
             return jsonify({"error": "server error"}), 500
+
 
     # Message 2 -> one-time link
     @app.post("/rmap-get-link")
@@ -985,13 +995,23 @@ def create_app():
         try:
             out = rmap.handle_message2(body)  # {"result": "<32-hex>"} or {"error": "..."}
             if "result" not in out:
-                log_event("rmap-get-link-failed", user="rmap", status="FAIL")
+                try:
+                    log_event("rmap-get-link-failed", user="rmap", status="FAIL")
+                except NameError:
+                    app.logger.warning("rmap-get-link-failed user=rmap status=FAIL")
                 return jsonify(out), 400
-            log_event("rmap-get-link-success", user="rmap", status="OK")
+
+            try:
+                log_event("rmap-get-link-success", user="rmap", status="OK")
+            except NameError:
+                app.logger.info("rmap-get-link-success user=rmap status=OK")
             return jsonify(_rmap_make_link(out["result"])), 200
         except Exception as e:
             app.logger.exception("rmap-get-link failed: %s", e)
-            log_event("rmap-get-link-exception", user="rmap", status="ERROR")
+            try:
+                log_event("rmap-get-link-exception", user="rmap", status="ERROR")
+            except NameError:
+                app.logger.error("rmap-get-link-exception user=rmap status=ERROR")
             return jsonify({"error": "server error"}), 500
 
     # One-time download endpoint
@@ -1000,11 +1020,17 @@ def create_app():
         tokens = app.config.get("RMAP_TOKENS", {})
         expires = tokens.pop(token, None)  # one-time use
         if not expires:
-            log_event("rmap-download-invalid-token", user="rmap", status="FAIL")
+            try:
+                log_event("rmap-download-invalid-token", user="rmap", status="FAIL")
+            except NameError:
+                app.logger.warning("rmap-download-invalid-token user=rmap status=FAIL")
             abort(404)
 
         if time.time() > expires:
-            log_event("rmap-download-expired-token", user="rmap", status="FAIL")
+            try:
+                log_event("rmap-download-expired-token", user="rmap", status="FAIL")
+            except NameError:
+                app.logger.warning("rmap-download-expired-token user=rmap status=FAIL")
             abort(404)
 
         pdf_path = Path(app.config["RMAP_PDF_PATH"])
@@ -1023,6 +1049,7 @@ def create_app():
             etag=False,
             last_modified=None,
         )
+    
 
     # ====================== end RMAP section ======================
 

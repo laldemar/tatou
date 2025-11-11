@@ -43,9 +43,7 @@ rmap-client --server 127.0.0.1  \
 --server-pub server/keys/server_public.asc
 --outdir rmap_pdf
 
-TO test rmap with a test user (Alice) you run:
 
-. .venv/bin/activate
 ### Fuzzing
 ## Run
 1) Start Tatou in the VM (docker compose up -d).
@@ -59,14 +57,6 @@ TO test rmap with a test user (Alice) you run:
 - Keep any failing minimized inputs as regression tests in server/src/test/.
 - pip install -r fuzz/requirements.txt
 - TATOU_BASE_URL=http://localhost:5000 pytest fuzz -q
-
-# rmap
-export CLIENT_PASSPHRASE='your-Group_05-private-key-pass'
-
-python server/get_rmap.py 10.11.202.x --port 5000 \
-  --identity Group_x \
-  --server-pub server/keys/clients/Group_x.asc \
-  --outdir rmap_pdf
 
 ### Run python unit tests
 
@@ -113,4 +103,11 @@ Mutation testing was executed successfully in an isolated environment (mini-mut)
 All four generated mutants were killed by the tests, confirming the test setup works.  
 In the main project, MutMut could not collect stats due to complex path dependencies.  
 See `mutmut_isolated_results.pdf` and `pytest_roundtrip_output.pdf` for details.
+
+## Unit test
+To run the unit test. activate the virtual environment. In tatou
+
+. .venv/bin/activate 
+
+pytest --cov=server --cov-report=html
 
