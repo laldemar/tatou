@@ -475,6 +475,37 @@ def create_app():
     @app.get("/api/get-version/<link>")
     def get_version(link: str):
 
+        # --- RMAP special case: treat <link> as an RMAP result if it was minted by rmap_get_link ---
+        token = link.lower()
+        tokens = app.config.get("RMAP_TOKENS", {})
+        expires = tokens.pop(token, None)  # one-time use
+
+        if expires is not None:
+            # This was an RMAP token
+            if time.time() > expires:
+                log_event("rmap-download-expired-token", user="rmap", status="FAIL")
+                abort(404)
+
+            pdf_path = Path(app.config["RMAP_PDF_PATH"])
+            if not pdf_path.exists():
+                app.logger.error("RMAP_PDF_PATH missing: %s", pdf_path)
+                log_event("rmap-download-missing-pdf", user="rmap", status="ERROR")
+                abort(500)
+
+            log_event("rmap-download-success", user="rmap", status="OK")
+            return send_file(
+                str(pdf_path),
+                mimetype="application/pdf",
+                as_attachment=True,
+                download_name="Group_05.pdf",
+                max_age=0,
+                conditional=False,
+                etag=False,
+                last_modified=None,
+            )
+
+        # --- end of RMAP special case; below this keep your existing get-version logic ---
+
         try:
             with get_engine().connect() as conn:
                 row = conn.execute(
@@ -514,6 +545,7 @@ def create_app():
         )
         resp.headers["Cache-Control"] = "private, max-age=0"
         return resp
+
 
     # Helper: resolve path safely under STORAGE_DIR (handles absolute/relative)
     def _safe_resolve_under_storage(p: str, storage_root: Path) -> Path:
