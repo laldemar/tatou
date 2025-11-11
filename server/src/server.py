@@ -900,8 +900,6 @@ def create_app():
             "position": position
         }), 201
 
-    
-
     # ====================== RMAP: setup + endpoints ======================
 
     app.config.setdefault("RMAP_PDF_PATH", os.environ.get("RMAP_PDF_PATH", "/app/storage/handout.pdf"))
