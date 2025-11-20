@@ -105,6 +105,17 @@ In the main project, MutMut could not collect stats due to complex path dependen
 See `mutmut_isolated_results.pdf` and `pytest_roundtrip_output.pdf` for details.
 
 ## Unit test
+. .venv/bin/activate
+
+sudo docker compose up -d db
+
+export DB_HOST=127.0.0.1
+export DB_PORT=3306
+export DB_USER=tatou
+export DB_PASSWORD=******
+export DB_NAME=tatou
+pytest --cov=server --cov-report=html
+
 To run the unit test. activate the virtual environment. In tatou
 
 . .venv/bin/activate 

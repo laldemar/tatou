@@ -4,6 +4,7 @@ import io
 import uuid
 import pytest
 import time
+import watermarking_utils as WMUtils 
 
 from server import app
 
@@ -209,7 +210,7 @@ def test_list_all_versions(client, auth_header):
 
 def _pick_method_name() -> str:
     # Reuse whatever is registered, skip the unsafe one
-    for name in WM.METHODS.keys():
+    for name in WMUtils.METHODS.keys():
         if name != "UnsafeBashBridgeAppendEOF":
             return name
     pytest.skip("No suitable watermarking method registered")
