@@ -208,7 +208,7 @@ def test_list_all_versions(client, auth_header):
     assert "versions" in body
     assert isinstance(body["versions"], list)
 
-    def _pick_method_name() -> str:
+def _pick_method_name() -> str:
     # Reuse whatever is registered, skip the unsafe one
     for name in WMUtils.METHODS.keys():
         if name != "UnsafeBashBridgeAppendEOF":
@@ -252,7 +252,7 @@ def test_create_and_read_watermark_happy_path(
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["secret"] == secret
-    
+
 
 
 # NOTE: Fully testing create-watermark / read-watermark “happy path” would
