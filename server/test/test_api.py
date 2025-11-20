@@ -3,6 +3,8 @@
 import io
 import uuid
 import pytest
+import time
+
 
 from server import app
 
@@ -19,7 +21,7 @@ def user_credentials():
     Generate a unique user each test run to avoid UNIQUE(email/login) collisions
     in the DB.
     """
-    suffix = uuid.uuid4().hex[:8]
+    suffix = str(int(time.time() * 1000000))
     email = f"test_{suffix}@example.com"
     login = f"user_{suffix}"
     password = "Secr3tP@ss!"
