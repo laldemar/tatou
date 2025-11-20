@@ -647,15 +647,7 @@ def test_rmap_get_link_missing_payload(client):
 
 
 
-
-    def _pick_method_name() -> str:
-    # Reuse whatever is registered, skip the unsafe one
-    for name in WMUtils.METHODS.keys():
-        if name != "UnsafeBashBridgeAppendEOF":
-            return name
-    pytest.skip("No suitable watermarking method registered")
-
-
+#orginal test create read 
 def test_create_and_read_watermark_happy_path(
     client, auth_header, uploaded_document_id
 ):
@@ -692,3 +684,4 @@ def test_create_and_read_watermark_happy_path(
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["secret"] == secret
+
