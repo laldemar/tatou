@@ -249,7 +249,7 @@ def test_create_and_read_watermark_happy_path(
         },
         headers=auth_header,
     )
-    assert resp.status_code == (200, 201)
+    assert resp.status_code == (200)
     body = resp.get_json()
     assert body["secret"] == secret
 
