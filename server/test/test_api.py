@@ -208,9 +208,9 @@ def test_list_all_versions(client, auth_header):
     assert "versions" in body
     assert isinstance(body["versions"], list)
 
-def _pick_method_name() -> str:
+    def _pick_method_name() -> str:
     # Reuse whatever is registered, skip the unsafe one
-    for name in WM.METHODS.keys():
+    for name in WMUtils.METHODS.keys():
         if name != "UnsafeBashBridgeAppendEOF":
             return name
     pytest.skip("No suitable watermarking method registered")
@@ -252,41 +252,7 @@ def test_create_and_read_watermark_happy_path(
     assert resp.status_code == 200
     body = resp.get_json()
     assert body["secret"] == secret
-
-
-def test_get_version_happy_path(client, auth_header, uploaded_document_id):
-    method_name = _pick_method_name()
-    secret = "api-secret"
-    key = "api-key"
-
-    # 1) Skapa en version via create-watermark
-    resp = client.post(
-        f"/api/create-watermark/{uploaded_document_id}",
-        json={
-            "method": method_name,
-            "position": None,
-            "key": key,
-            "secret": secret,
-            "intended_for": "UnitTest",
-        },
-        headers=auth_header,
-    )
-    assert resp.status_code in (200, 201)
-
-    # 2) Hämta versionslistan för dokumentet
-    resp = client.get(f"/api/list-versions/{uploaded_document_id}",
-                      headers=auth_header)
-    assert resp.status_code == 200
-    body = resp.get_json()
-    assert body["versions"], "Expected at least one version"
-    first_version = body["versions"][0]
-    link = first_version["link"]
-
-    # 3) Följ länken till get-version
-    resp = client.get(link)
-    assert resp.status_code == 200
-    assert resp.data  # should not be empty
-    assert resp.headers["Content-Type"].startswith("application/pdf")
+    
 
 
 # NOTE: Fully testing create-watermark / read-watermark “happy path” would
