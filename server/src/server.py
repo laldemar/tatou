@@ -973,8 +973,7 @@ def create_app():
                 server_public_key_path=server_pub,
                 server_private_key_path=server_priv,
                 server_private_key_passphrase=server_priv_pass,
-            )
-            app.config["RMAP"] = RMAP(im)
+            )            app.config["RMAP"] = RMAP(im)
             app.logger.info("RMAP initialized (clients dir: %s)", clients_dir)
         except Exception as e:
             app.logger.exception("Failed to initialize RMAP: %s", e)
