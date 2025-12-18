@@ -12,7 +12,7 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy project description, to instal dependencies
-COPY ..pyproject.toml /app/pyproject.toml
+COPY pyproject.toml /app/pyproject.toml
 
 # Install runtime dependencies
 RUN pip install --no-cache-dir -e .
