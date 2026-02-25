@@ -1,0 +1,103 @@
+mutatest -s server/src/wm_logic.py
+2026-02-25 11:54:19,262: Running clean trial
+======================================================= test session starts ========================================================
+platform darwin -- Python 3.11.14, pytest-9.0.2, pluggy-1.6.0
+rootdir: /Users/mathewostiruwuha/Desktop/CybSec/tatou
+configfile: pytest.ini
+testpaths: tests
+collected 19 items                                                                                                                 
+
+tests/mutation_testing/test_wm_logic.py ...................                                                                  [100%]
+
+======================================================== 19 passed in 0.01s ========================================================
+2026-02-25 11:54:19,400: 10 mutation targets found in server/src/wm_logic.py AST.
+2026-02-25 11:54:19,400: Setting random.seed to: None
+2026-02-25 11:54:19,404: Total sample space size: 7
+2026-02-25 11:54:19,404: 10 exceeds sample space, using full sample: 7.
+2026-02-25 11:54:19,404: Starting individual mutation trials!
+2026-02-25 11:54:19,404: Running serial (single processor) dispatch mode.
+2026-02-25 11:54:19,404: Current target location: wm_logic.py, LocIndex(ast_class='NameConstant', lineno=9, col_offset=41, op_type=N
+one, end_lineno=9, end_col_offset=45)                                                                                               2026-02-25 11:54:19,513: Result: Survived at server/src/wm_logic.py: (9, 41)
+2026-02-25 11:54:19,513: Break on survival: stopping further mutations at location.
+2026-02-25 11:54:19,513: Current target location: wm_logic.py, LocIndex(ast_class='If', lineno=10, col_offset=4, op_type='If_Stateme
+nt', end_lineno=11, end_col_offset=60)                                                                                              2026-02-25 11:54:19,634: Result: Detected at server/src/wm_logic.py: (10, 4)
+2026-02-25 11:54:19,752: Result: Detected at server/src/wm_logic.py: (10, 4)
+2026-02-25 11:54:19,752: Current target location: wm_logic.py, LocIndex(ast_class='NameConstant', lineno=18, col_offset=54, op_type=
+None, end_lineno=18, end_col_offset=58)                                                                                             2026-02-25 11:54:19,860: Result: Survived at server/src/wm_logic.py: (18, 54)
+2026-02-25 11:54:19,860: Break on survival: stopping further mutations at location.
+2026-02-25 11:54:19,860: Current target location: wm_logic.py, LocIndex(ast_class='If', lineno=20, col_offset=4, op_type='If_Stateme
+nt', end_lineno=21, end_col_offset=51)                                                                                              2026-02-25 11:54:19,980: Result: Detected at server/src/wm_logic.py: (20, 4)
+2026-02-25 11:54:20,098: Result: Detected at server/src/wm_logic.py: (20, 4)
+2026-02-25 11:54:20,098: Current target location: wm_logic.py, LocIndex(ast_class='BoolOp', lineno=20, col_offset=7, op_type=<class 
+'ast.Or'>, end_lineno=20, end_col_offset=56)                                                                                        2026-02-25 11:54:20,219: Result: Detected at server/src/wm_logic.py: (20, 7)
+2026-02-25 11:54:20,219: Current target location: wm_logic.py, LocIndex(ast_class='If', lineno=23, col_offset=4, op_type='If_Stateme
+nt', end_lineno=24, end_col_offset=48)                                                                                              2026-02-25 11:54:20,337: Result: Detected at server/src/wm_logic.py: (23, 4)
+2026-02-25 11:54:20,457: Result: Detected at server/src/wm_logic.py: (23, 4)
+2026-02-25 11:54:20,457: Current target location: wm_logic.py, LocIndex(ast_class='BoolOp', lineno=23, col_offset=7, op_type=<class 
+'ast.Or'>, end_lineno=23, end_col_offset=50)                                                                                        2026-02-25 11:54:20,579: Result: Detected at server/src/wm_logic.py: (23, 7)
+2026-02-25 11:54:20,579: Running clean trial
+======================================================= test session starts ========================================================
+platform darwin -- Python 3.11.14, pytest-9.0.2, pluggy-1.6.0
+rootdir: /Users/mathewostiruwuha/Desktop/CybSec/tatou
+configfile: pytest.ini
+testpaths: tests
+collected 19 items                                                                                                                 
+
+tests/mutation_testing/test_wm_logic.py ...................                                                                  [100%]
+
+======================================================== 19 passed in 0.01s ========================================================
+2026-02-25 11:54:20,693: CLI Report:
+
+Mutatest diagnostic summary
+===========================
+ - Source location: /Users/mathewostiruwuha/Desktop/CybSec/tatou/server/src/wm_logic.py
+ - Test commands: ['pytest']
+ - Mode: s
+ - Excluded files: []
+ - N locations input: 10
+ - Random seed: None
+
+Random sample details
+---------------------
+ - Total locations mutated: 7
+ - Total locations identified: 7
+ - Location sample coverage: 100.00 %
+
+
+Running time details
+--------------------
+ - Clean trial 1 run time: 0:00:00.136525
+ - Clean trial 2 run time: 0:00:00.112620
+ - Mutation trials total run time: 0:00:01.180421
+
+2026-02-25 11:54:20,693: Trial Summary Report:
+
+Overall mutation trial summary
+==============================
+ - SURVIVED: 2
+ - DETECTED: 8
+ - TOTAL RUNS: 10
+ - RUN DATETIME: 2026-02-25 11:54:20.693023
+
+2026-02-25 11:54:20,693: Detected mutations:
+
+DETECTED
+--------
+ - server/src/wm_logic.py: (l: 10, c: 4) - mutation from If_Statement to If_False
+ - server/src/wm_logic.py: (l: 10, c: 4) - mutation from If_Statement to If_True
+ - server/src/wm_logic.py: (l: 20, c: 4) - mutation from If_Statement to If_False
+ - server/src/wm_logic.py: (l: 20, c: 4) - mutation from If_Statement to If_True
+ - server/src/wm_logic.py: (l: 20, c: 7) - mutation from <class 'ast.Or'> to <class 'ast.And'>
+ - server/src/wm_logic.py: (l: 23, c: 4) - mutation from If_Statement to If_False
+ - server/src/wm_logic.py: (l: 23, c: 4) - mutation from If_Statement to If_True
+ - server/src/wm_logic.py: (l: 23, c: 7) - mutation from <class 'ast.Or'> to <class 'ast.And'>
+
+2026-02-25 11:54:20,693: Timedout mutations:
+
+2026-02-25 11:54:20,693: Surviving mutations:
+
+SURVIVED
+--------
+ - server/src/wm_logic.py: (l: 9, c: 41) - mutation from None to True
+ - server/src/wm_logic.py: (l: 18, c: 54) - mutation from None to True
+

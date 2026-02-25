@@ -1,0 +1,63 @@
+import os
+import pytest
+
+import server.src.wm_logic as m
+print("MODULE USED:", m.__name__)
+
+from server.src.wm_logic import (
+    WatermarkLogicError,
+    validate_method_name,
+    validate_secret_and_key,
+    resolve_method,
+)
+
+
+def test_mutmut_forced_fail():
+    if os.environ.get("MUTANT_UNDER_TEST") == "fail":
+        pytest.fail("Forced failure for mutmut sanity check")
+
+
+def test_validate_method_name_valid():
+    validate_method_name("method")
+
+
+@pytest.mark.parametrize("bad", [None, "", 123])
+def test_validate_method_name_invalid(bad):
+    with pytest.raises(WatermarkLogicError):
+        validate_method_name(bad)
+
+
+def test_validate_secret_and_key_valid():
+    validate_secret_and_key("secret", "key")
+
+
+@pytest.mark.parametrize(
+    "secret,key",
+    [
+        (None, "key"),
+        ("secret", None),
+        ("", "key"),
+        ("secret", ""),
+    ],
+)
+def test_validate_secret_and_key_invalid(secret, key):
+    with pytest.raises(WatermarkLogicError):
+        validate_secret_and_key(secret, key)
+
+
+def test_resolve_method_valid():
+    obj = object()
+    registry = {"a": obj}
+    assert resolve_method(registry, "a") is obj
+
+
+def test_resolve_method_unknown():
+    registry = {"a": object()}
+    with pytest.raises(WatermarkLogicError):
+        resolve_method(registry, "b")
+
+
+def test_resolve_method_invalid_name():
+    registry = {"a": object()}
+    with pytest.raises(WatermarkLogicError):
+        resolve_method(registry, None)

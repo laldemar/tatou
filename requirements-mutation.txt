@@ -1,0 +1,32 @@
+blinker==1.9.0
+certifi==2026.1.4
+cffi==2.0.0
+charset-normalizer==3.4.4
+click==8.3.1
+coverage==5.5
+cryptography==46.0.5
+dill==0.4.0
+Flask==3.0.3
+gunicorn==21.2.0
+idna==3.11
+iniconfig==2.3.0
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.3
+mutatest==3.1.0
+packaging==26.0
+PGPy==0.6.0
+pluggy==1.6.0
+pyasn1==0.6.2
+pycparser==3.0
+Pygments==2.19.2
+PyMuPDF==1.27.1
+PyMySQL==1.1.2
+pytest==9.0.2
+requests==2.32.5
+rmap @ https://github.com/nharrand/RMAP-Server/releases/download/v2.0.0/rmap-2.0.0-py3-none-any.whl#sha256=5303849cbf3f8d590619c71c89b1cfb98622ff8cd4efa4d76c36685ee43aeec4
+SQLAlchemy==2.0.43
+-e git+https://github.com/laldemar/tatou.git@493f020c9760354abe35e604be45bf3d73887d9a#egg=tatou_server
+typing_extensions==4.15.0
+urllib3==2.6.3
+Werkzeug==3.1.6

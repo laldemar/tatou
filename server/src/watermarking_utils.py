@@ -234,10 +234,10 @@ def explore_pdf(pdf: PdfSource) -> Dict[str, Any]:
     for i, c in enumerate(page_nodes):
         # Provide deterministic page IDs independent from object numbers
         c_page = {
-            "id": f"page:{i:04d}",
-            "type": "Page",
-            "xref_hint": c["id"],
-        }
+           "id": f"page:{i:04d}",
+           "type": "Page",
+           "xref_hint": c["id"],
+        } 
         children.insert(i, c_page)
 
     root["children"] = children

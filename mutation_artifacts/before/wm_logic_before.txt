@@ -1,0 +1,29 @@
+# server/src/wm_logic.py
+from typing import Dict
+
+
+class WatermarkLogicError(Exception):
+    """Raised when watermark logic validation fails."""
+
+
+def validate_method_name(method: str) -> None:
+    if not isinstance(method, str):
+        raise WatermarkLogicError("method must be a string")
+    if not method:
+        raise WatermarkLogicError("method must not be empty")
+
+
+def validate_secret_and_key(secret: str, key: str) -> None:
+    if not isinstance(secret, str) or not secret:
+        raise WatermarkLogicError("invalid secret")
+    if not isinstance(key, str) or not key:
+        raise WatermarkLogicError("invalid key")
+
+
+def resolve_method(registry: Dict[str, object], method: str) -> object:
+    validate_method_name(method)
+
+    if method not in registry:
+        raise WatermarkLogicError(f"unknown method: {method}")
+
+    return registry[method]

@@ -1,0 +1,7 @@
+mutant_id,file,line,column,mutation,status_before,status_after,interpretation
+
+M01,server/src/wm_logic.py,10,4,If→If_True,DETECTED,DETECTED,Behavioural test already strong
+M02,server/src/wm_logic.py,20,7,Or→And,DETECTED,DETECTED,Logical change detected correctly
+M03,server/src/wm_logic.py,23,7,Or→And,DETECTED,DETECTED,Validation behaviour verified
+M04,server/src/wm_logic.py,9,41,None→True,SURVIVED,SURVIVED,Equivalent mutation (no behavioural change)
+M05,server/src/wm_logic.py,18,54,None→True,SURVIVED,SURVIVED,Equivalent mutation (no behavioural change)

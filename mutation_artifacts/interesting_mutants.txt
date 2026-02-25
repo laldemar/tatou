@@ -1,0 +1,24 @@
+DETECTED
+--------
+ - server/src/wm_logic.py: (l: 10, c: 4) - mutation from If_Statement to If_False
+ - server/src/wm_logic.py: (l: 10, c: 4) - mutation from If_Statement to If_True
+ - server/src/wm_logic.py: (l: 12, c: 4) - mutation from If_Statement to If_True
+ - server/src/wm_logic.py: (l: 12, c: 4) - mutation from If_Statement to If_False
+ - server/src/wm_logic.py: (l: 17, c: 4) - mutation from If_Statement to If_True
+ - server/src/wm_logic.py: (l: 17, c: 4) - mutation from If_Statement to If_False
+ - server/src/wm_logic.py: (l: 17, c: 7) - mutation from <class 'ast.Or'> to <class 'ast.And'>
+ - server/src/wm_logic.py: (l: 19, c: 4) - mutation from If_Statement to If_True
+ - server/src/wm_logic.py: (l: 19, c: 4) - mutation from If_Statement to If_False
+ - server/src/wm_logic.py: (l: 19, c: 7) - mutation from <class 'ast.Or'> to <class 'ast.And'>
+ - server/src/wm_logic.py: (l: 26, c: 4) - mutation from If_Statement to If_True
+ - server/src/wm_logic.py: (l: 26, c: 4) - mutation from If_Statement to If_False
+ - server/src/wm_logic.py: (l: 26, c: 7) - mutation from <class 'ast.NotIn'> to <class 'ast.In'>[0m
+
+2026-02-24 15:56:14,143: Timedout mutations:
+
+2026-02-24 15:56:14,143: Surviving mutations:[91m
+
+SURVIVED
+--------
+ - server/src/wm_logic.py: (l: 9, c: 41) - mutation from None to True
+ - server/src/wm_logic.py: (l: 16, c: 54) - mutation from None to False[0m
